@@ -1,0 +1,19 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Format check on the example memories
+        run: MEMORY_DIR=examples python3 reader/read.py check
+      - name: Reader works with no arguments
+        run: MEMORY_DIR=examples python3 reader/read.py list

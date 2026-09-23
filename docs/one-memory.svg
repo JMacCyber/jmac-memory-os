@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <radialGradient id="c" cx="50%" cy="50%" r="46%">
+      <stop offset="0%"  stop-color="#1D4ED8" stop-opacity="0.26"/>
+      <stop offset="70%" stop-color="#0B1220" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="g" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#1E293B" stroke-opacity="0.4" stroke-width="1"/>
+    </pattern>
+    <filter id="d" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <style>
+      .mono { font-family:ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace }
+      .eyebrow { font-size:13px; font-weight:700; letter-spacing:3px; fill:#4F8CFF }
+      .h1   { font-size:44px; font-weight:800; fill:#F8FAFC; letter-spacing:-0.7px }
+      .sub  { font-size:19px; fill:#94A3B8 }
+      .chip { fill:#111C30; stroke:#22314F; stroke-width:1.5; rx:11 }
+      .cn   { font-size:16.5px; font-weight:600; fill:#E2E8F0 }
+      .how  { font-size:11.5px; font-weight:700; letter-spacing:1.6px; fill:#64748B }
+      .lane { font-size:11.5px; font-weight:700; letter-spacing:2.4px; fill:#475569 }
+      .card { fill:#111C30; stroke:#2B4675; stroke-width:2; rx:14 }
+      .bar  { fill:#16233B }
+      .bl   { font-size:12.5px; font-weight:700; letter-spacing:2px; fill:#64748B }
+      .fold { font-size:16px; font-weight:700; fill:#7DD3FC }
+      .file { font-size:14.5px; fill:#F1F5F9 }
+      .cap  { font-size:13.5px; fill:#64748B }
+      .pill { fill:none; stroke:#22314F; stroke-width:1.5; rx:16 }
+      .pt   { font-size:14px; font-weight:600; fill:#94A3B8 }
+      .foot { font-size:14px; fill:#475569 }
+    </style>
+  </defs>
+
+  <rect width="1280" height="680" fill="#0B1220"/>
+  <rect width="1280" height="680" fill="url(#g)"/>
+  <rect width="1280" height="680" fill="url(#c)"/>
+
+  <text class="eyebrow" x="640" y="58"  text-anchor="middle">JMAC MEMORY OS</text>
+  <text class="h1"      x="640" y="106" text-anchor="middle">One memory. Every model.</text>
+  <text class="sub"     x="640" y="140" text-anchor="middle">Connect your models and chats to a single git repo you own.</text>
+  <text class="sub"     x="640" y="168" text-anchor="middle">Write a fact in Claude Code. Ask ChatGPT about it. Get it back.</text>
+
+  <!-- connecting lines -->
+  <g fill="none" stroke="#2B4675" stroke-width="1.75">
+    <path d="M370 254 C 420 254 420 350 470 350"/>
+    <path d="M370 318 C 420 318 420 350 470 350"/>
+    <path d="M370 382 C 420 382 420 350 470 350"/>
+    <path d="M370 446 C 420 446 420 350 470 350"/>
+    <path d="M810 350 C 860 350 860 254 910 254"/>
+    <path d="M810 350 C 860 350 860 318 910 318"/>
+    <path d="M810 350 C 860 350 860 382 910 382"/>
+    <path d="M810 350 C 860 350 860 446 910 446"/>
+  </g>
+  <g fill="#4F8CFF">
+    <circle cx="470" cy="350" r="4"/><circle cx="810" cy="350" r="4"/>
+  </g>
+
+  <!-- left lane: reads the folder directly -->
+  <text class="lane" x="100" y="212">READS THE FOLDER DIRECTLY</text>
+  <g filter="url(#d)">
+    <rect class="chip" x="100" y="230" width="270" height="48"/>
+    <rect class="chip" x="100" y="294" width="270" height="48"/>
+    <rect class="chip" x="100" y="358" width="270" height="48"/>
+    <rect class="chip" x="100" y="422" width="270" height="48"/>
+  </g>
+  <text class="cn" x="122" y="260">Claude Code</text>
+  <text class="cn" x="122" y="324">Codex</text>
+  <text class="cn" x="122" y="388">Cursor</text>
+  <text class="cn" x="122" y="452">Copilot, Windsurf, Aider</text>
+
+  <!-- right lane: via MCP -->
+  <text class="lane" x="1180" y="212" text-anchor="end">CONNECTS VIA API, INTEGRATION OR MCP</text>
+  <g filter="url(#d)">
+    <rect class="chip" x="910" y="230" width="270" height="48"/>
+    <rect class="chip" x="910" y="294" width="270" height="48"/>
+    <rect class="chip" x="910" y="358" width="270" height="48"/>
+    <rect class="chip" x="910" y="422" width="270" height="48"/>
+  </g>
+  <text class="cn" x="932" y="260">ChatGPT</text>
+  <text class="cn" x="932" y="324">Claude</text>
+  <text class="cn" x="932" y="388">Gemini, Grok</text>
+  <text class="cn" x="932" y="452">Perplexity, M365 Copilot</text>
+
+  <!-- centre: the repo -->
+  <g filter="url(#d)">
+    <rect class="card" x="470" y="228" width="340" height="244"/>
+    <path d="M470 242a14 14 0 0 1 14-14h312a14 14 0 0 1 14 14v32H470z" class="bar"/>
+  </g>
+  <circle cx="492" cy="258" r="4.5" fill="#FF5F57"/>
+  <circle cx="508" cy="258" r="4.5" fill="#FEBC2E"/>
+  <circle cx="524" cy="258" r="4.5" fill="#28C840"/>
+  <text class="bl mono" x="546" y="263">YOUR GIT REPO</text>
+
+  <text class="fold mono" x="496" y="312">memory/</text>
+  <text class="file mono" x="496" y="340"><tspan fill="#334155">├─ </tspan>ships-on-fridays.md</text>
+  <text class="file mono" x="496" y="364"><tspan fill="#334155">├─ </tspan>sqlite-is-the-database.md</text>
+  <text class="file mono" x="496" y="388"><tspan fill="#334155">├─ </tspan>status-dashboard.md</text>
+  <text class="file mono" x="496" y="412"><tspan fill="#334155">└─ </tspan><tspan fill="#94A3B8">archive/</tspan></text>
+  <text class="cap"      x="496" y="446">Plain Markdown. One file, one fact.</text>
+
+  <!-- pills -->
+  <g>
+    <rect class="pill" x="366" y="536" width="132" height="34"/><text class="pt" x="432" y="558" text-anchor="middle">No server</text>
+    <rect class="pill" x="514" y="536" width="148" height="34"/><text class="pt" x="588" y="558" text-anchor="middle">No database</text>
+    <rect class="pill" x="678" y="536" width="140" height="34"/><text class="pt" x="748" y="558" text-anchor="middle">No account</text>
+    <rect class="pill" x="834" y="536" width="80" height="34"/><text class="pt" x="874" y="558" text-anchor="middle">MIT</text>
+  </g>
+
+  <text class="foot" x="640" y="618" text-anchor="middle">Nothing phones home. Python 3 standard library only. The memory stays in a repo you control.</text>
+</svg>

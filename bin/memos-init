@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""memos-init — create a git memory repo that any AI client can read.
+
+Usage:
+    memos-init [directory] [--git] [--force]
+
+Creates the layout defined in SPEC.md, an AGENTS.md instruction file that
+tells a coding agent how to use it, and one example memory so the repo is
+not empty on first read.
+
+No dependencies. Python 3.8+.
+"""
+
+import os
+import subprocess
+import sys
+from datetime import date
+
+LAYOUT = ["memory", "memory/archive"]
+
+INDEX = """# Memory Index
+
+One line per live memory. Nothing else belongs in this file.
+
+- [how-i-work](how-i-work.md) — delete this example once you have written a real memory
+"""
+
+EXAMPLE = """---
+name: how-i-work
+type: user
+description: delete this example once you have written a real memory
+effective_from: {today}
+source: created by memos-init
+---
+
+This file exists so the repo is not empty the first time a client reads it.
+
+Replace it with something true. A good first memory is the thing you are
+tired of repeating: your stack, your deploy rule, the name of the person who
+approves releases.
+
+Then delete this line from `INDEX.md` and add yours.
+"""
+
+AGENTS = """# Memory
+
+This repository is your memory. Read it before you answer, and write to it
+when you learn something that will still be true next week.
+
+The format is defined in SPEC.md. The short version:
+
+## Reading
+
+1. Read `memory/INDEX.md` first. It lists every current memory, one line each.
+2. Open the files whose description looks relevant.
+3. Never read `memory/archive/` unless you are asked what used to be true.
+   Everything in there is false now, by definition.
+
+## Writing
+
+When you learn a durable fact — a decision, a preference, a constraint, a
+pointer to something — write it down:
+
+1. Check `INDEX.md` for a memory that already covers it.
+2. If none exists, create `memory/<slug>.md` with this frontmatter:
+
+```
+---
+name: <slug>
+type: user | project | decision | reference
+description: <one line>
+effective_from: <YYYY-MM-DD>
+source: <where this came from>
+---
+```
+
+3. Add one line to `INDEX.md`: `- [<slug>](<slug>.md) — <description>`
+4. Commit both files together.
+
+One memory is one fact. If you are writing "and" in the description, it is
+two memories.
+
+## When a fact changes
+
+Never edit a memory in place. Supersede it:
+
+1. Move the old file to `memory/archive/<slug>.<YYYY-MM-DD>.md`
+2. Add `effective_to:` and `superseded_by:` to its frontmatter
+3. Write the new memory with `supersedes: <old-slug>`
+4. Replace the line in `INDEX.md`
+5. Commit it all together
+
+## Never
+
+- Never put a credential, token or password in a memory.
+- Never delete a memory file. Archive it.
+- Never write a memory about something that is already in the code or the
+  git history. Write what the repo cannot tell you.
+"""
+
+GITIGNORE = """.DS_Store
+*.swp
+.env
+"""
+
+README = """# My Memory
+
+Personal memory for AI assistants, in the JMac Memory OS format.
+
+Read `memory/INDEX.md` to see what is in here.
+Format: https://github.com/JMacCyber/jmac-memory-os
+"""
+
+
+def die(msg):
+    print(f"memos-init: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def write(path, text, force):
+    if os.path.exists(path) and not force:
+        print(f"  skip   {path} (exists)")
+        return False
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    print(f"  write  {path}")
+    return True
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith("--")]
+    flags = {a for a in argv if a.startswith("--")}
+    unknown = flags - {"--git", "--force", "--help", "-h"}
+    if unknown:
+        die(f"unknown option: {', '.join(sorted(unknown))}")
+    if "--help" in flags or "-h" in flags:
+        print(__doc__)
+        return 0
+
+    root = os.path.abspath(args[0] if args else ".")
+    force = "--force" in flags
+    today = date.today().isoformat()
+
+    os.makedirs(root, exist_ok=True)
+    for d in LAYOUT:
+        os.makedirs(os.path.join(root, d), exist_ok=True)
+    print(f"memory repo at {root}")
+
+    write(os.path.join(root, "memory", "INDEX.md"), INDEX, force)
+    write(os.path.join(root, "memory", "how-i-work.md"),
+          EXAMPLE.format(today=today), force)
+    write(os.path.join(root, "AGENTS.md"), AGENTS, force)
+    write(os.path.join(root, "CLAUDE.md"), "See AGENTS.md.\n", force)
+    write(os.path.join(root, ".gitignore"), GITIGNORE, force)
+    write(os.path.join(root, "README.md"), README, force)
+
+    if "--git" in flags:
+        if os.path.isdir(os.path.join(root, ".git")):
+            print("  skip   git init (already a repo)")
+        else:
+            try:
+                subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+                subprocess.run(["git", "add", "."], cwd=root, check=True)
+                subprocess.run(
+                    ["git", "commit", "-q", "-m", "Start memory"],
+                    cwd=root, check=True)
+                print("  git    initialised, one commit")
+            except FileNotFoundError:
+                die("git is not installed")
+            except subprocess.CalledProcessError as exc:
+                die(f"git failed: {exc}")
+
+    print("""
+Next:
+  1. Create a PRIVATE repo on GitHub and push this.
+  2. Point your tools at it — see clients/ in the jmac-memory-os repo.
+  3. Tell your agent: "read AGENTS.md, then read memory/INDEX.md".
+""")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

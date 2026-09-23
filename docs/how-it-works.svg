@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <radialGradient id="glow" cx="18%" cy="6%" r="72%">
+      <stop offset="0%"  stop-color="#1D4ED8" stop-opacity="0.30"/>
+      <stop offset="60%" stop-color="#0B1220" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="86%" cy="96%" r="58%">
+      <stop offset="0%"  stop-color="#B45309" stop-opacity="0.16"/>
+      <stop offset="70%" stop-color="#0B1220" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#1E293B" stroke-opacity="0.45" stroke-width="1"/>
+    </pattern>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4F8CFF"/>
+    </marker>
+    <style>
+      .mono  { font-family:ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace }
+      .eyebrow { font-size:13px; font-weight:700; letter-spacing:3px; fill:#4F8CFF }
+      .h1    { font-size:42px; font-weight:800; fill:#F8FAFC; letter-spacing:-0.6px }
+      .sub   { font-size:19px; fill:#94A3B8 }
+      .card  { fill:#111C30; stroke:#22314F; stroke-width:1.5; rx:14 }
+      .bar   { fill:#16233B }
+      .barlbl{ font-size:12.5px; font-weight:700; letter-spacing:2px; fill:#64748B }
+      .sect  { font-size:11.5px; font-weight:700; letter-spacing:2.2px; fill:#64748B }
+      .fold  { font-size:16px; font-weight:700; fill:#7DD3FC }
+      .file  { font-size:15px; fill:#F1F5F9 }
+      .meta  { font-size:13px; fill:#64748B }
+      .dim   { font-size:14px; fill:#475569; font-style:italic }
+      .amber { fill:#FFB020 }
+      .q     { font-size:19px; font-weight:700; fill:#F8FAFC }
+      .ans   { font-size:17px; font-weight:800 }
+      .exp   { font-size:14.5px; fill:#94A3B8 }
+      .foot  { font-size:14px; fill:#475569 }
+      .chip  { font-size:12.5px; font-weight:700; letter-spacing:1.4px; fill:#93C5FD }
+    </style>
+  </defs>
+
+  <rect width="1280" height="820" fill="#0B1220"/>
+  <rect width="1280" height="820" fill="url(#grid)"/>
+  <rect width="1280" height="820" fill="url(#glow)"/>
+  <rect width="1280" height="820" fill="url(#glow2)"/>
+
+  <text class="eyebrow" x="56" y="62">JMAC MEMORY OS</text>
+  <text class="h1"      x="56" y="108">Nothing is overwritten. It moves.</text>
+  <text class="sub"     x="56" y="142">A memory is one file. When a fact stops being true it moves to the archive, dated, with a pointer to what replaced it.</text>
+
+  <!-- ============ BEFORE ============ -->
+  <g filter="url(#drop)">
+    <rect class="card" x="56" y="188" width="530" height="356"/>
+    <path d="M56 202a14 14 0 0 1 14-14h502a14 14 0 0 1 14 14v34H56z" class="bar"/>
+  </g>
+  <circle cx="80"  cy="219" r="4.5" fill="#FF5F57"/>
+  <circle cx="96"  cy="219" r="4.5" fill="#FEBC2E"/>
+  <circle cx="112" cy="219" r="4.5" fill="#28C840"/>
+  <text class="barlbl mono" x="134" y="224">BEFORE</text>
+
+  <text class="sect" x="82" y="278">LIVE  ·  WHAT IS TRUE NOW</text>
+  <text class="fold mono" x="82" y="310">memory/</text>
+  <text class="file mono" x="82" y="338"><tspan fill="#334155">└─ </tspan>postgres-is-the-database.md</text>
+  <text class="meta mono" x="82" y="360">      effective_from: 2026-03-04</text>
+
+  <line x1="82" y1="392" x2="560" y2="392" stroke="#22314F" stroke-width="1.5"/>
+
+  <text class="sect" x="82" y="424">ARCHIVE  ·  WHAT USED TO BE TRUE</text>
+  <text class="fold mono" x="82" y="456" fill="#475569">memory/archive/</text>
+  <text class="dim mono"  x="82" y="484">└─ nothing yet</text>
+  <text class="dim" x="82" y="516" font-style="normal" font-size="13">PostgreSQL is still true, so there is nothing to archive yet.</text>
+
+  <!-- ============ ARROW ============ -->
+  <text class="chip" x="640" y="336" text-anchor="middle" font-size="11">SWITCH</text>
+  <text class="chip" x="640" y="352" text-anchor="middle" font-size="11">TO SQLITE</text>
+  <line x1="602" y1="378" x2="676" y2="378" stroke="#4F8CFF" stroke-width="2.5" marker-end="url(#arw)"/>
+
+  <!-- ============ AFTER ============ -->
+  <g filter="url(#drop)">
+    <rect class="card" x="694" y="188" width="530" height="356"/>
+    <path d="M694 202a14 14 0 0 1 14-14h502a14 14 0 0 1 14 14v34H694z" class="bar"/>
+  </g>
+  <circle cx="718" cy="219" r="4.5" fill="#FF5F57"/>
+  <circle cx="734" cy="219" r="4.5" fill="#FEBC2E"/>
+  <circle cx="750" cy="219" r="4.5" fill="#28C840"/>
+  <text class="barlbl mono" x="772" y="224">AFTER</text>
+
+  <text class="sect" x="720" y="278">LIVE  ·  WHAT IS TRUE NOW</text>
+  <text class="fold mono" x="720" y="310">memory/</text>
+  <text class="file mono" x="720" y="338"><tspan fill="#334155">└─ </tspan>sqlite-is-the-database.md</text>
+  <text class="meta mono" x="720" y="360">      effective_from: 2026-09-21</text>
+
+  <line x1="720" y1="392" x2="1198" y2="392" stroke="#22314F" stroke-width="1.5"/>
+
+  <text class="sect" x="720" y="424">ARCHIVE  ·  WHAT USED TO BE TRUE</text>
+  <text class="fold mono" x="720" y="456">memory/archive/</text>
+  <text class="file mono amber" x="720" y="484" font-size="14"><tspan fill="#334155">└─ </tspan>postgres-is-the-database.2026-09-21.md</text>
+  <text class="meta mono" x="720" y="506" font-size="12.5">      effective_to:  2026-09-21</text>
+  <text class="meta mono" x="720" y="526" font-size="12.5">      superseded_by: sqlite-is-the-database</text>
+
+  <!-- ============ WHAT THE AI GETS ============ -->
+  <text class="eyebrow" x="56" y="600" fill="#64748B">WHAT YOUR AI ACTUALLY GETS BACK</text>
+
+  <g filter="url(#drop)">
+    <rect class="card" x="56" y="620" width="530" height="146"/>
+  </g>
+  <rect x="56" y="620" width="4" height="146" fill="#4F8CFF" rx="2"/>
+  <text class="q"   x="86" y="658">“Which database do we use?”</text>
+  <text class="ans" x="86" y="694" fill="#4ADE80">SQLite</text>
+  <text class="exp" x="86" y="726">It searched <tspan class="mono" fill="#7DD3FC">memory/</tspan> only. The PostgreSQL file</text>
+  <text class="exp" x="86" y="746">is not in the folder it searched.</text>
+
+  <g filter="url(#drop)">
+    <rect class="card" x="694" y="620" width="530" height="146"/>
+  </g>
+  <rect x="694" y="620" width="4" height="146" fill="#FFB020" rx="2"/>
+  <text class="q"   x="724" y="658">“What did we use before?”</text>
+  <text class="ans" x="724" y="694" fill="#FFB020">PostgreSQL, until 21 Sept 2026</text>
+  <text class="exp" x="724" y="726">It read <tspan class="mono" fill="#7DD3FC">memory/archive/</tspan> as well. You get</text>
+  <text class="exp" x="724" y="746">history when you ask for it, and only then.</text>
+
+  <text class="foot" x="56" y="800">Plain Markdown in a Git repo. No database, no server, no account, nothing phones home.  ·  MIT  ·  Python 3 standard library only</text>
+</svg>
