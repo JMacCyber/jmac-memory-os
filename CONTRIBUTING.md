@@ -23,7 +23,9 @@ It must print `Format OK.` The same command runs on every push and pull request.
 ## What does not get merged
 
 - A dependency. `reader/read.py` is Python 3 standard library only and stays
-  that way. It is tested on macOS system Python 3.9.6.
+  that way. It is tested on macOS system Python 3.9.6 and must also run on
+  Windows (x64/ARM64). `--dir` is the cross-platform way to point it at a
+  folder.
 - Ranking, embeddings, or a vector store. If you need those you have outgrown
   this format, which the README says outright.
 - A new frontmatter field, unless a reader cannot work without it.

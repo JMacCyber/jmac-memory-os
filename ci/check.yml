@@ -10,10 +10,20 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
       - name: Format check on the example memories
-        run: MEMORY_DIR=examples python3 reader/read.py check
-      - name: Reader works with no arguments
-        run: MEMORY_DIR=examples python3 reader/read.py list
+        run: python reader/read.py --dir examples check
+      - name: Reader lists memories
+        run: python reader/read.py --dir examples list
+      - name: memos-init creates a repo that passes the check
+        run: |
+          python bin/memos-init scratch-memory
+          python scratch-memory/.memos/read.py --dir scratch-memory check

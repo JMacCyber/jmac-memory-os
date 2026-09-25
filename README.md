@@ -16,6 +16,12 @@ Write a fact in Claude Code. Ask ChatGPT about it. Get it back.
 python3 bin/memos-init ~/my-memory --git
 ```
 
+On Windows (PowerShell):
+
+```powershell
+py bin\memos-init $HOME\my-memory --git      # or: .\windows\Setup-Memory.ps1
+```
+
 That makes a repo. Push it to a **private** GitHub repo, connect your tools,
 and they share one memory. No server, no database, no account with anyone,
 no subscription. The memory is markdown files in your own git.
@@ -91,6 +97,9 @@ python3 reader/read.py history postgres-is-the-database
 python3 reader/read.py check
 ```
 
+On Windows use `py` and `--dir` (works on every OS):
+`py reader\read.py --dir $HOME\my-memory list`. See [clients/windows.md](clients/windows.md).
+
 `check` is the one worth wiring into a pre-commit hook. It catches a memory
 missing from the index, a filename that disagrees with its `name`, and a bad
 type — the three things that break a reader.
@@ -104,6 +113,7 @@ One page each, with the exact text to paste:
 - [Cursor](clients/cursor.md)
 - [ChatGPT](clients/chatgpt.md)
 - [Anything that speaks MCP](clients/mcp-clients.md)
+- [Windows setup and paths](clients/windows.md)
 
 ## What this is not
 
