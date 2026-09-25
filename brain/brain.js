@@ -159,18 +159,19 @@ function layout(view) {
     }
     P.forEach(p => L.set(p.n.id, [p.x, p.y]));
   } else if (view === 'timeline') {
-    const times = S.mems.map(n => Date.parse(n.modified)).filter(Number.isFinite);
-    const lo = Math.min(...times), hi = Math.max(...times), span = Math.max(hi - lo, 864e5);
+    // Order, not scale: files are spaced evenly by last change, oldest left. Bulk commits put dozens of
+    // files in the same minute, which a true time scale squeezes into one spot. A tick marks each new day.
     const lanes = TYPES.map(t => t[0]).filter(k => S.mems.some(n => n.kind === k));
-    const W = CONFIG.timelineWidth;
-    S.timeline = { lo, hi, span, lanes, W };
-    const jitter = new Map();
-    S.mems.forEach(n => {
-      const t = Date.parse(n.modified), x = Number.isFinite(t) ? (t - lo) / span * W - W / 2 : -W / 2 - 60;
-      const lane = lanes.indexOf(n.kind), key = n.kind + Math.round(x / 6);
-      const k = jitter.get(key) || 0; jitter.set(key, k + 1);
-      L.set(n.id, [x, (lane - (lanes.length - 1) / 2) * CONFIG.laneGap + ((k % 7) - 3) * 7]);
+    const W = CONFIG.timelineWidth, when = n => { const t = Date.parse(n.modified); return Number.isFinite(t) ? t : Infinity; };
+    const sorted = [...S.mems].sort((a, b) => when(a) - when(b) || a.area.localeCompare(b.area) || a.name.localeCompare(b.name));
+    const step = W / Math.max(sorted.length - 1, 1), ticks = [];
+    let day = '';
+    sorted.forEach((n, i) => {
+      const x = i * step - W / 2, d = when(n) === Infinity ? 'No Date' : new Date(when(n)).toLocaleDateString('en-CA');
+      if (d !== day) { ticks.push({ x: x - step / 2, label: d }); day = d; }
+      L.set(n.id, [x, (lanes.indexOf(n.kind) - (lanes.length - 1) / 2) * CONFIG.laneGap]);
     });
+    S.timeline = { lanes, W, ticks };
   } else if (view === 'globe') {
     globe3d();
     S.nodes.forEach(n => { const p = S.globe.get(n.id); if (p) { const q = turn(p); L.set(n.id, [q[0], q[1]]); } });
@@ -335,14 +336,13 @@ function drawLanes(r) {
 function drawAxis(r) {
   const T = S.timeline; if (!T) return;
   ctx.fillStyle = '#8a93a6'; ctx.strokeStyle = 'rgba(140,150,170,.15)'; ctx.font = '11px -apple-system, sans-serif';
-  const d = new Date(T.lo); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
-  const step = T.span > 400 * 864e5 ? 3 : 1;
-  while (d.getTime() <= T.hi) {
-    const x0 = (d.getTime() - T.lo) / T.span * T.W - T.W / 2;
-    const [x] = toScreen(x0, 0);
-    if (x > CONFIG.labelGutter && x < r.width) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, r.height); ctx.stroke(); ctx.fillText(d.toISOString().slice(0, 7), x + 3, 14); }
-    d.setUTCMonth(d.getUTCMonth() + step);
-  }
+  let lastLabel = -Infinity;
+  T.ticks.forEach(t => {
+    const [x] = toScreen(t.x, 0);
+    if (x <= CONFIG.labelGutter || x >= r.width) return;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, r.height); ctx.stroke();
+    if (x - lastLabel > 70) { ctx.fillText(t.label.slice(5), x + 3, 14); lastLabel = x; }  // MM-DD; skip if it would overlap the last one
+  });
 }
 
 // ---------- camera ----------
