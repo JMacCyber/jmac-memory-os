@@ -1,4 +1,4 @@
-// Brain View: draws data/graph.json five ways on one canvas.
+// Brain View: draws data/graph.json six ways on one canvas.
 'use strict';
 
 const CONFIG = {
@@ -18,10 +18,10 @@ const CONFIG = {
   labelZoom: 1.6,         // labels appear on their own above this zoom
   hitPx: 9,               // click and hover radius in screen px
   labelGutter: 84,        // px kept free on the left of the Timeline for lane names
-  globeRadius: 420,       // px radius of the Globe
-  globeTilt: -0.35,       // radians the Globe leans toward you at start
-  globeSpinPerSec: 0.25,  // radians per second when Motion is on in Globe
-  globeDragRad: 0.006,    // radians of Globe turn per px dragged
+  orbitTilt: 0.45,        // radians: 0 = flat disc seen edge-on, higher = seen more from above
+  orbitSpinPerSec: 0.12,  // radians per second the Orbit turns on its own
+  orbitDragRad: 0.006,    // radians of Orbit turn per px dragged
+  circleSpacing: 14,      // px between nodes on the Circle
 };
 
 const TYPES = [
@@ -41,7 +41,7 @@ const S = {
   graph: null, nodes: [], byId: new Map(), out: new Map(), inn: new Map(), edges: [],
   view: 'rings', layouts: {}, cam: { x: 0, y: 0, k: 1 }, hover: null, selected: null,
   typeOnly: null, areaOnly: '', names: false, motion: false, spin: 0, anim: null, fly: null,
-  globe: null, yaw: 0, pitch: -0.35,
+  orbit: null, yaw: 0, pitch: 0.45,
   session: null, dirty: false, started: false,
 };
 
@@ -56,7 +56,7 @@ async function load(openId) {
     status('Could not read graph.json: ' + e.message, true);
     return;
   }
-  S.graph = g; S.byId = new Map(); S.out = new Map(); S.inn = new Map(); S.layouts = {}; S.globe = null;
+  S.graph = g; S.byId = new Map(); S.out = new Map(); S.inn = new Map(); S.layouts = {}; S.orbit = null;
   S.nodes = g.nodes.map(n => ({ ...n, x: 0, y: 0, tx: 0, ty: 0, deg: 0 }));
   S.nodes.forEach(n => { S.byId.set(n.id, n); S.out.set(n.id, []); S.inn.set(n.id, []); });
   S.edges = g.edges.filter(e => S.byId.has(e.from) && S.byId.has(e.to)).map(e => ({ a: S.byId.get(e.from), b: S.byId.get(e.to), why: e.why }));
@@ -81,7 +81,7 @@ async function load(openId) {
   session();
 }
 const isMem = n => n.kind !== 'root' && n.kind !== 'area';
-const VIEWS = ['rings', 'areas', 'links', 'timeline', 'globe'];
+const VIEWS = ['rings', 'circle', 'areas', 'links', 'timeline', 'orbit'];
 
 function fillChrome() {
   const g = S.graph, links = S.edges.filter(e => e.why === 'link').length;
@@ -172,33 +172,30 @@ function layout(view) {
       L.set(n.id, [x, (lanes.indexOf(n.kind) - (lanes.length - 1) / 2) * CONFIG.laneGap]);
     });
     S.timeline = { lanes, W, ticks };
-  } else if (view === 'globe') {
-    globe3d();
-    S.nodes.forEach(n => { const p = S.globe.get(n.id); if (p) { const q = turn(p); L.set(n.id, [q[0], q[1]]); } });
-    return L;  // not cached: the Globe turns, so its 2D spots change every frame
+  } else if (view === 'circle') {
+    // Root in the middle; every other node on one ring, grouped by area then kind, so links cross the middle.
+    const on = S.nodes.filter(n => n.kind !== 'root').sort((a, b) => a.area.localeCompare(b.area) || (a.kind === 'area' ? -1 : b.kind === 'area' ? 1 : 0) || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+    const R = on.length * CONFIG.circleSpacing / (2 * Math.PI);
+    L.set('root', [0, 0]);
+    on.forEach((n, i) => { const t = i / on.length * 2 * Math.PI - Math.PI / 2; L.set(n.id, [Math.cos(t) * R, Math.sin(t) * R]); });
+  } else if (view === 'orbit') {
+    orbit3d();
+    S.nodes.forEach(n => { const p = S.orbit.get(n.id); if (p) { const q = turn(p); L.set(n.id, [q[0], q[1]]); } });
+    return L;  // not cached: the Orbit turns, so its 2D spots change every frame
   }
   S.layouts[view] = L;
   return L;
 }
 
-// Globe: each area is a spot on a sphere (even spread), its memories a small patch around it; root at the centre.
-function globe3d() {
-  if (S.globe) return;
-  const R = CONFIG.globeRadius, golden = Math.PI * (3 - Math.sqrt(5)), N = S.areas.length, P = new Map([['root', [0, 0, 0]]]);
-  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  const unit = a => { const m = Math.hypot(...a) || 1; return a.map(c => c / m); };
-  S.areas.forEach((a, i) => {
-    const y = 1 - (i + 0.5) / N * 2, rr = Math.sqrt(1 - y * y), t = i * golden, d = [Math.cos(t) * rr, y, Math.sin(t) * rr];
-    P.set(a.id, d.map(c => c * R));
-    const u = unit(cross(d, Math.abs(d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0])), v = cross(d, u);
-    S.out.get(a.id).filter(e => e.why === 'area').forEach((e, j) => {
-      const r = 0.05 * Math.sqrt(j + 1), w = (j + 1) * golden;
-      P.set(e.b.id, unit(d.map((c, k) => c + (u[k] * Math.cos(w) + v[k] * Math.sin(w)) * r)).map(c => c * R));
-    });
-  });
-  S.globe = P;
+// Orbit: the Rings layout laid flat as a disc, tilted toward you and turning on its own (2.5D).
+function orbit3d() {
+  if (S.orbit) return;
+  const R = layout('rings'), P = new Map();
+  R.forEach(([x, y], id) => P.set(id, [x, 0, y]));
+  S.orbit = P;
+  S.orbitRadii = [...new Set([...R.values()].map(([x, y]) => Math.round(Math.hypot(x, y))))].filter(r => r > 0);
 }
-// Turn a 3D point by the Globe's yaw (left-right) and pitch (up-down). Returns [x, y, z]; z > 0 faces you.
+// Turn a 3D point by the Orbit's yaw (around the root) and pitch (tilt). Returns [x, y, z]; z > 0 faces you.
 function turn([x, y, z]) {
   const cy = Math.cos(S.yaw), sy = Math.sin(S.yaw), cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
   const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
@@ -255,9 +252,9 @@ function frame(now) {
     if (t === 1) S.fly = null;
   }
   if (S.motion && (S.view === 'rings' || S.view === 'areas') && !S.hover && !S.fly) S.spin += CONFIG.spinPerSec / 60;
-  if (S.view === 'globe') {
-    if (S.motion && !S.hover && !drag) S.yaw += CONFIG.globeSpinPerSec / 60;
-    S.nodes.forEach(n => { const p = S.globe.get(n.id); if (!p) return; const q = turn(p); n.tx = q[0]; n.ty = q[1]; n.z = q[2]; if (!S.anim) { n.x = n.tx; n.y = n.ty; } });
+  if (S.view === 'orbit') {
+    if (!S.hover && !drag && !S.fly) S.yaw += CONFIG.orbitSpinPerSec / 60;  // turns on its own; hover or drag holds it
+    S.nodes.forEach(n => { const p = S.orbit.get(n.id); if (!p) return; const q = turn(p); n.tx = q[0]; n.ty = q[1]; n.z = q[2]; if (!S.anim) { n.x = n.tx; n.y = n.ty; } });
   }
   draw();
 }
@@ -265,11 +262,11 @@ function draw() {
   const r = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, r.width, r.height);
   if (S.view === 'timeline') drawAxis(r);
-  const globe = S.view === 'globe', back = n => globe && n.z < -1;
-  if (globe) {
-    const [cx, cy] = toScreen(0, 0);
-    ctx.beginPath(); ctx.arc(cx, cy, CONFIG.globeRadius * S.cam.k, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(110,168,254,.04)'; ctx.fill(); ctx.strokeStyle = 'rgba(110,168,254,.25)'; ctx.stroke();
+  const globe = S.view === 'orbit', back = n => globe && n.z < -1;
+  if (globe) {  // faint orbit path per ring
+    const [cx, cy] = toScreen(0, 0), sq = Math.abs(Math.sin(S.pitch));
+    ctx.strokeStyle = 'rgba(110,168,254,.18)';
+    (S.orbitRadii || []).forEach(r0 => { ctx.beginPath(); ctx.ellipse(cx, cy, r0 * S.cam.k, r0 * S.cam.k * sq, 0, 0, 2 * Math.PI); ctx.stroke(); });
   }
   const focus = S.hover || S.selected, near = focus ? neighbours(focus) : null;
   ctx.lineWidth = 1;
@@ -278,7 +275,7 @@ function draw() {
     if (S.view === 'timeline' && e.why !== 'link') continue;
     const lit = focus && (e.a === focus || e.b === focus);
     if (focus && !lit && S.view !== 'links' && e.why === 'area') continue;
-    if (globe && e.a.kind === 'root' && !lit) continue;  // spokes to the centre would cross the whole Globe
+    if ((globe || S.view === 'circle') && e.why === 'area' && !lit) continue;  // area spokes would hide the links
     const [x1, y1] = toScreen(e.a.x, e.a.y), [x2, y2] = toScreen(e.b.x, e.b.y);
     ctx.globalAlpha = back(e.a) || back(e.b) ? 0.3 : 1;
     ctx.strokeStyle = lit ? 'rgba(110,168,254,.9)' : e.why === 'link' ? `rgba(199,146,234,${focus ? .08 : .35})` : `rgba(140,150,170,${focus ? .03 : .09})`;
@@ -287,21 +284,22 @@ function draw() {
   ctx.globalAlpha = 1;
   const showAll = S.names || S.cam.k >= CONFIG.labelZoom, labels = [];
   ctx.font = '11px -apple-system, sans-serif';
-  const order = globe ? [...S.nodes].sort((a, b) => a.z - b.z) : S.nodes;  // Globe: back side first
+  const order = globe ? [...S.nodes].sort((a, b) => a.z - b.z) : S.nodes;  // Orbit: far side first
   for (const n of order) {
     if (!visible(n)) continue;
-    const [x, y] = toScreen(n.x, n.y), depth = globe ? 0.8 + 0.25 * n.z / CONFIG.globeRadius : 1;
+    const [x, y] = toScreen(n.x, n.y);
+    const depth = globe ? 0.85 + 0.25 * Math.max(-1, Math.min(1, n.z / 400)) : 1;
     const rad = n.r * Math.max(0.6, Math.min(S.cam.k, 2.5)) * depth;
     if (x < -40 || y < -40 || x > r.width + 40 || y > r.height + 40) continue;
-    ctx.globalAlpha = (near && !near.has(n.id) ? 0.12 : 1) * (back(n) ? 0.25 : 1);
+    ctx.globalAlpha = (near && !near.has(n.id) ? 0.12 : 1) * (back(n) ? 0.55 : 1);
     ctx.fillStyle = COLOR[n.kind] || COLOR.other;
     ctx.beginPath();
     if (n.kind === 'area') ctx.rect(x - rad, y - rad, rad * 2, rad * 2);
     else ctx.arc(x, y, rad, 0, 2 * Math.PI);
     ctx.fill();
     if (n.kind === 'root' || n === S.selected) { ctx.strokeStyle = '#6ea8fe'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
-    const label = n.kind === 'root' || (n.kind === 'area' && (S.view === 'areas' || globe)) || showAll || (near && near.has(n.id));
-    if (label && !back(n)) labels.push({ n, x, y, rad, pri: n === focus ? 0 : n.kind === 'root' ? 1 : near && near.has(n.id) ? 2 : n.kind === 'area' ? 3 : 4 });
+    const label = n.kind === 'root' || (n.kind === 'area' && (S.view === 'areas' || S.view === 'circle' || globe)) || showAll || (near && near.has(n.id));
+    if (label) labels.push({ n, x, y, rad, pri: n === focus ? 0 : n.kind === 'root' ? 1 : near && near.has(n.id) ? 2 : n.kind === 'area' ? 3 : 4 });
   }
   ctx.globalAlpha = 1;
   drawLabels(labels, r);
@@ -350,7 +348,7 @@ function fit(animate = true) {
   const vis = S.nodes.filter(visible); if (!vis.length) return;
   const xs = vis.map(n => n.tx), ys = vis.map(n => n.ty), r = canvas.getBoundingClientRect();
   if (!r.width || !r.height) { requestAnimationFrame(() => fit(animate)); return; }
-  if (S.view === 'globe') { go(0, 0, Math.min(r.width, r.height) / (2 * CONFIG.globeRadius + 60), animate); return; }
+  if (S.view === 'orbit') { orbit3d(); const m = Math.max(...S.orbitRadii); go(0, 0, Math.min(r.width / (2 * m + 60), r.height / (2 * m * Math.abs(Math.sin(S.pitch)) + 60), 3), animate); return; }
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const left = S.view === 'timeline' ? CONFIG.labelGutter : 0;
   const k = Math.min((r.width - left) / (maxX - minX + 80), r.height / (maxY - minY + 80), 3);
@@ -364,16 +362,16 @@ function go(x, y, k, animate = true) {
 function flyTo(n) {
   if (S.areaOnly && n.area !== S.areaOnly) { S.areaOnly = ''; $('#area').value = ''; }
   if (S.typeOnly && isMem(n) && n.kind !== S.typeOnly) setType(null);
-  if (S.view === 'globe' && S.globe.has(n.id)) {  // turn the Globe so the memory faces you
-    const [x, y, z] = S.globe.get(n.id); S.yaw = Math.atan2(-x, z); S.pitch = 0;
-    go(0, y, Math.max(S.cam.k, CONFIG.flyZoom)); return;
+  if (S.view === 'orbit' && S.orbit.has(n.id)) {  // turn the Orbit so the memory is at the front
+    const [x, , z] = S.orbit.get(n.id); S.yaw = Math.atan2(-x, z);
+    const q = turn(S.orbit.get(n.id)); go(q[0], q[1], Math.max(S.cam.k, CONFIG.flyZoom)); return;
   }
   go(n.tx, n.ty, Math.max(S.cam.k, CONFIG.flyZoom));
 }
 function hit(mx, my) {
   let best = null, bd = Infinity;
   for (const n of S.nodes) {
-    if (!visible(n) || (S.view === 'globe' && n.z < -1)) continue;
+    if (!visible(n) || false) continue;
     const [x, y] = toScreen(n.x, n.y), d = Math.hypot(x - mx, y - my), lim = Math.max(CONFIG.hitPx, n.r * S.cam.k);
     if (d < lim && d < bd) { bd = d; best = n; }
   }
@@ -646,7 +644,7 @@ canvas.addEventListener('mousemove', e => {
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; canvas.classList.add('drag'); S.fly = null; }
-    if (S.view === 'globe') { S.yaw = drag.yaw + dx * CONFIG.globeDragRad; S.pitch = Math.max(-1.4, Math.min(1.4, drag.pitch - dy * CONFIG.globeDragRad)); }
+    if (S.view === 'orbit') { S.yaw = drag.yaw + dx * CONFIG.orbitDragRad; S.pitch = Math.max(0.1, Math.min(1.5, drag.pitch + dy * CONFIG.orbitDragRad)); }
     else { S.cam.x = drag.cx - dx / S.cam.k; S.cam.y = drag.cy - dy / S.cam.k; }
     return;
   }

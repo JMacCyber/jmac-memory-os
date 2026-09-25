@@ -11,10 +11,11 @@
   <h1>Brain View <span class="tag">Test</span></h1>
   <nav class="views" aria-label="View">
     <button data-view="rings" title="Root in the middle, areas on the first ring, each memory type on its own ring">Rings</button>
+    <button data-view="circle" title="Every area and file on one ring, grouped by area. Links cross the middle">Circle</button>
     <button data-view="areas" title="One cluster per area, root in the middle">Areas</button>
     <button data-view="links" title="Force layout: memories that link to each other pull together">Links</button>
     <button data-view="timeline" title="Files in order of last change, oldest left, evenly spaced; a line marks each new day. One lane per memory type">Timeline</button>
-    <button data-view="globe" title="Each area is a spot on a sphere with its memories around it. Drag to turn it, scroll to zoom">Globe</button>
+    <button data-view="orbit" title="The Rings laid flat and tilted toward you, turning on its own. Hover to hold it, drag to turn or tilt">3D Orbit</button>
   </nav>
   <div class="search">
     <input id="q" type="search" placeholder="Search Name, Description, Path" autocomplete="off" aria-label="Search">
@@ -22,7 +23,7 @@
   </div>
   <div class="toggles">
     <button id="names" aria-pressed="false" title="Show every label">Names</button>
-    <button id="motion" aria-pressed="false" title="Slow idle rotation in Rings, Areas and Globe">Motion</button>
+    <button id="motion" aria-pressed="false" title="Slow idle rotation in Rings and Areas (3D Orbit always turns)">Motion</button>
     <button id="new" title="Create a new memory file in the repo">New</button>
     <button id="fit" title="Fit every visible node on screen">Fit</button>
     <button id="full" title="Full screen">Full Screen</button>
