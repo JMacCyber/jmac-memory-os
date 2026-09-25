@@ -68,3 +68,4 @@ canvas.over { cursor: pointer; }
   body { grid-template-columns: 1fr; grid-template-rows: auto auto auto 1fr; }
   .legend { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
 }
+.card a { color: var(--accent); }

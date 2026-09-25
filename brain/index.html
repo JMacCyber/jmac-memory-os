@@ -28,18 +28,18 @@
 </header>
 
 <section class="stats" aria-label="Totals">
-  <button class="stat" data-stat="areas"><b id="s-areas">–</b> Areas<i class="tip" data-tip="Count of memory folders that hold at least one memory file. One folder = one area. Click to open the Areas view.">i</i></button>
-  <button class="stat" data-stat="memories"><b id="s-mem">–</b> Memories<i class="tip" data-tip="Count of .md files in those folders, not counting MEMORY.md, INDEX.md or archive/. Click to list them all.">i</i></button>
-  <button class="stat" data-stat="links"><b id="s-links">–</b> Links<i class="tip" data-tip="Count of [[name]] links in memory bodies that match another memory, same area first, then a unique match anywhere. Click to open the Links view.">i</i></button>
-  <button class="stat" data-stat="unresolved"><b id="s-unres">–</b> Unresolved<i class="tip" data-tip="[[name]] links with no matching memory. The format allows them: they mark something worth writing. Click to list them.">i</i></button>
-  <button class="stat" data-stat="built"><span id="s-built">–</span><i class="tip" data-tip="When build_graph.py last wrote data/graph.json. Amber after 24 hours. Click to see which folders it read.">i</i></button>
+  <button class="stat" data-stat="areas"><b id="s-areas">–</b> Areas<i class="tip" data-tip="Count of projects. Each file names its project in a project: field, else a Project: line, else its folder path. Files with none go to general. Click to open the Areas view.">i</i></button>
+  <button class="stat" data-stat="memories"><b id="s-mem">–</b> Memories<i class="tip" data-tip="Count of .md and .yaml files in the memory repo, not counting .git, scripts/ or archive/. Click to list them all.">i</i></button>
+  <button class="stat" data-stat="links"><b id="s-links">–</b> Links<i class="tip" data-tip="Count of related:, supersedes:, [[name]] and Markdown links that match another file in the repo, by path, id or file name. Click to open the Links view.">i</i></button>
+  <button class="stat" data-stat="unresolved"><b id="s-unres">–</b> Unresolved<i class="tip" data-tip="Links that match no file in the repo. Free-text supersedes: notes are not counted. Click to list them.">i</i></button>
+  <button class="stat" data-stat="built"><span id="s-built">–</span><i class="tip" data-tip="When build_graph.py last wrote data/graph.json. Amber after 24 hours. Click to see which repo it read.">i</i></button>
 </section>
 
 <aside class="legend" aria-label="Legend">
-  <h2>Types <i class="tip" data-tip="Colour = the memory's type field. Click a type to show only that type. Click again to show all.">i</i></h2>
+  <h2>Types <i class="tip" data-tip="Colour = the top folder in the repo: records, threads, artifacts and so on. Click a type to show only that type. Click again to show all.">i</i></h2>
   <ul id="types"></ul>
-  <h2>Area <i class="tip" data-tip="Show one area only. Size of a dot = how many links it has.">i</i></h2>
-  <select id="area" aria-label="Area"><option value="">All Areas</option></select>
+  <h2>Project <i class="tip" data-tip="Show one project only. Size of a dot = how many links it has.">i</i></h2>
+  <select id="area" aria-label="Area"><option value="">All Projects</option></select>
   <p class="hint">Drag to pan · Wheel to zoom · Click a dot to open it</p>
 </aside>
 

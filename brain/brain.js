@@ -20,8 +20,10 @@ const CONFIG = {
 };
 
 const TYPES = [
-  ['user', '#f0b429', 'User'], ['feedback', '#ef5b5b', 'Feedback'], ['project', '#6ea8fe', 'Project'],
-  ['reference', '#3ecf8e', 'Reference'], ['decision', '#c792ea', 'Decision'], ['other', '#8a93a6', 'Other'],
+  ['record', '#6ea8fe', 'Record'], ['thread', '#3ecf8e', 'Thread'], ['artifact', '#f0b429', 'Artifact'],
+  ['handoff', '#ef5b5b', 'Handoff'], ['project', '#c792ea', 'Project'], ['policy', '#4dd0e1', 'Policy'],
+  ['prompt', '#ff9f68', 'Prompt'], ['schema', '#a3be8c', 'Schema'], ['global', '#e6e9ef', 'Global'],
+  ['other', '#8a93a6', 'Other'],
 ];
 const COLOR = Object.fromEntries(TYPES.map(t => [t[0], t[1]]));
 COLOR.root = '#ffffff'; COLOR.area = '#9fb3d9';
@@ -87,7 +89,7 @@ function layout(view) {
   if (S.layouts[view]) return S.layouts[view];
   const L = new Map();
   if (view === 'rings') {
-    const order = ['user', 'feedback', 'project', 'reference', 'decision', 'other'];
+    const order = TYPES.map(t => t[0]);
     L.set('root', [0, 0]);
     S.areas.forEach((a, i) => { const t = i / S.areas.length * 2 * Math.PI; L.set(a.id, [Math.cos(t) * CONFIG.ringGap, Math.sin(t) * CONFIG.ringGap]); });
     let ring = 2;
@@ -296,13 +298,15 @@ function openCard(n, push = true) {
     <p class="desc">${esc(n.description || '')}</p>`;
   if (n.path) html += `<div class="path">${esc(n.path)}</div>`;
   html += `<div class="row"><button data-act="fly">Fly To</button>${n.path ? '<button data-act="copy">Copy Path</button>' : ''}${isMem(n) ? '<button data-act="open">Open File</button>' : ''}</div><div id="filebox"></div>`;
-  if (n.kind === 'root') html += list('Areas', outL.map(e => e.b), 'Every memory folder read by build_graph.py.');
-  else if (n.kind === 'area') html += list('Memories', outL.map(e => e.b).sort((a, b) => a.name.localeCompare(b.name)), 'Every memory file in this folder.');
+  if (n.kind === 'root') html += (n.url ? `<p><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></p>` : '') + list('Areas', outL.map(e => e.b), 'Every project named in the repo files: the project: field, else a Project: line, else the folder path.');
+  else if (n.kind === 'area') html += list('Files', outL.map(e => e.b).sort((a, b) => a.name.localeCompare(b.name)), 'Every repo file that names this project.');
   else {
-    html += list('Links Out', outL.filter(e => e.why === 'link').map(e => e.b), 'Memories this file names with [[name]].');
-    html += list('Links In', inL.filter(e => e.why === 'link').map(e => e.a), 'Memories that name this file with [[name]].');
-    if (unres.length) html += `<h4>Unresolved (${unres.length}) <i class="tip" data-tip="[[name]] links in this file with no matching memory yet.">i</i></h4><ul>${unres.map(u => `<li>${esc(u.target)}</li>`).join('')}</ul>`;
-    html += `<p class="note">Read only. Edit this memory in its file or through the Memory OS tools; the next build picks it up.</p>`;
+    html += list('Links Out', outL.filter(e => e.why === 'link').map(e => e.b), 'Files this one points to through related:, supersedes:, [[name]] or a Markdown link.');
+    html += list('Links In', inL.filter(e => e.why === 'link').map(e => e.a), 'Files that point to this one.');
+    if (unres.length) html += `<h4>Unresolved (${unres.length}) <i class="tip" data-tip="related:, supersedes: or [[name]] entries in this file that match no file in the repo.">i</i></h4><ul>${unres.map(u => `<li>${esc(u.target)}</li>`).join('')}</ul>`;
+    const R = S.graph.repo || {};
+    if (R.url && n.rel) html += `<p><a href="${esc(R.url)}/blob/${esc(R.branch || 'main')}/${n.rel.split('/').map(encodeURIComponent).join('/')}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></p>`;
+    html += `<p class="note">Read only. Edit this file in the memory repo and push; the next build picks it up.</p>`;
   }
   showCard(html);
   if (push) writeHash(true);
@@ -378,7 +382,7 @@ document.querySelectorAll('.stat').forEach(b => b.addEventListener('click', e =>
   if (k === 'links') { setView('links'); setTimeout(fit, CONFIG.morphMs); }
   if (k === 'memories') openList('All Memories', [...S.mems].sort((a, b) => a.name.localeCompare(b.name)).map(row), 'Every memory file, A to Z. Click one to open it.');
   if (k === 'unresolved') openList('Unresolved Links', S.graph.unresolved.map(u => { const n = S.byId.get(u.from); return `<li data-go="${esc(u.from)}">[[${esc(u.target)}]]<small>in ${esc(n ? n.name : u.from)}</small></li>`; }), 'Links to a memory that does not exist yet. Click to open the file that holds the link.');
-  if (k === 'built') openList('Sources', S.graph.sources.map(s => `<li>${esc(s)}</li>`), `graph.json built ${S.graph.built} from these folders by build_graph.py. Rebuild: python3 brain/build_graph.py`);
+  if (k === 'built') { const R = S.graph.repo || {}; openList('Source', [R.url && `<li><a href="${esc(R.url)}" target="_blank" rel="noopener noreferrer">${esc(R.url)}</a></li>`, R.branch && `<li>Branch ${esc(R.branch)} · Commit ${esc(R.commit)}</li>`, ...S.graph.sources.map(s => `<li>${esc(s)}</li>`)].filter(Boolean), `graph.json built ${S.graph.built} from this repo by build_graph.py. Pull the repo, then rebuild: python3 brain/build_graph.py`); }
 }));
 
 // search
