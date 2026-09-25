@@ -15,7 +15,7 @@
     <button data-view="areas" title="One cluster per area, root in the middle">Areas</button>
     <button data-view="links" title="Force layout: memories that link to each other pull together">Links</button>
     <button data-view="timeline" title="Files in order of last change, oldest left, evenly spaced; a line marks each new day. One lane per memory type">Timeline</button>
-    <button data-view="orbit" title="The Rings laid flat and tilted toward you, turning on its own. Hover to hold it, drag to turn or tilt">3D Orbit</button>
+    <button data-view="orbit" title="A wireframe sphere: the repo in the middle, one hub per area, its files as a cloud around it. Colour = area, shape = kind; the outer ring holds one badge per kind. Turns on its own; hover holds it, drag turns or tilts">3D Orbit</button>
   </nav>
   <div class="search">
     <input id="q" type="search" placeholder="Search Name, Description, Path" autocomplete="off" aria-label="Search">
@@ -47,7 +47,7 @@
   <p class="hint">Drag to pan · Wheel to zoom · Click a dot to open it</p>
 </aside>
 
-<main id="stage"><canvas id="c"></canvas><p id="status" class="status">Loading graph.json…</p></main>
+<main id="stage"><canvas id="c"></canvas><div id="chips" class="chips" hidden></div><p id="status" class="status">Loading graph.json…</p></main>
 
 <div id="shade" class="shade" hidden></div>
 <aside id="card" class="card" hidden role="dialog" aria-modal="true" aria-labelledby="card-title">

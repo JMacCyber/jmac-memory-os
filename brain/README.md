@@ -1,6 +1,6 @@
 # Brain View (Test)
 
-A graph of the private memory repo `JMacCyber/JMacAIUnifiedMemory`. Six layouts: Rings, Circle, Areas, Links, Timeline, 3D Orbit.
+A graph of the private memory repo `JMacCyber/JMacAIUnifiedMemory`. Six layouts: Rings, Circle, Areas, Links, Timeline, 3D Orbit (a wireframe sphere: repo in the middle, one hub per area with its files around it, colour by area, shape by kind, one ring badge per kind).
 
 ```bash
 python3 brain/build_graph.py            # writes brain/data/graph.json (not committed)

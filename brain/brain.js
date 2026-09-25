@@ -18,7 +18,12 @@ const CONFIG = {
   labelZoom: 1.6,         // labels appear on their own above this zoom
   hitPx: 9,               // click and hover radius in screen px
   labelGutter: 84,        // px kept free on the left of the Timeline for lane names
-  orbitTilt: 0.45,        // radians: 0 = flat disc seen edge-on, higher = seen more from above
+  orbitRadius: 260,       // px radius of the 3D Orbit sphere
+  orbitHubAt: 0.58,       // area hubs sit at this share of the sphere radius
+  orbitRingAt: 1.45,      // the outer ring of kind badges, as a share of the sphere radius
+  orbitRingDrop: 0.3,     // the ring sits this share of the radius below the equator
+  orbitPerspective: 3.2,  // camera distance in sphere radii: lower = stronger depth
+  orbitTilt: 0.55,        // radians the sphere leans its top toward you
   orbitSpinPerSec: 0.12,  // radians per second the Orbit turns on its own
   orbitDragRad: 0.006,    // radians of Orbit turn per px dragged
   circleSpacing: 14,      // px between nodes on the Circle
@@ -41,7 +46,7 @@ const S = {
   graph: null, nodes: [], byId: new Map(), out: new Map(), inn: new Map(), edges: [],
   view: 'rings', layouts: {}, cam: { x: 0, y: 0, k: 1 }, hover: null, selected: null,
   typeOnly: null, areaOnly: '', names: false, motion: false, spin: 0, anim: null, fly: null,
-  orbit: null, yaw: 0, pitch: 0.45,
+  orbit: null, yaw: 0, pitch: CONFIG.orbitTilt, areaColor: new Map(), badges: [], badge: null,
   session: null, dirty: false, started: false,
 };
 
@@ -64,6 +69,9 @@ async function load(openId) {
   S.nodes.forEach(n => { n.r = n.kind === 'root' ? 14 : n.kind === 'area' ? 7 : 3 + Math.sqrt(n.deg) * 1.2; });
   S.mems = S.nodes.filter(isMem);
   S.areas = S.nodes.filter(n => n.kind === 'area').sort((a, b) => a.name.localeCompare(b.name));
+  // One colour per area, biggest first, hues a golden angle apart so neighbours differ. Used by the 3D Orbit.
+  S.areaColor = new Map([...S.areas].sort((a, b) => S.out.get(b.id).length - S.out.get(a.id).length || a.name.localeCompare(b.name))
+    .map((a, i) => [a.area, `hsl(${Math.round(i * 137.5) % 360},72%,62%)`]));
   fillChrome();
   status(`${S.mems.length} memories · ${S.areas.length} areas · built ${g.built}`);
   if (S.started) {
@@ -100,6 +108,17 @@ function fillChrome() {
   if (S.areaOnly && !S.areas.some(a => a.area === S.areaOnly)) S.areaOnly = '';
   $('#area').innerHTML = '<option value="">All Projects</option>';
   $('#area').insertAdjacentHTML('beforeend', S.areas.map(a => `<option value="${esc(a.area)}">${esc(a.name)} (${S.out.get(a.id).length})</option>`).join(''));
+  // 3D Orbit chips: one per area (colour, name, file count), then one per kind (shape, name, count).
+  const tip = 'files name this project. Click to show only this area; click again for all.';
+  $('#chips').innerHTML = `<div class="row"><button class="chip" data-area="" data-tip="All ${S.mems.length} files. Click to clear the area filter.">all areas</button>` + [...S.areaColor].map(([area, c]) => { const n = S.out.get('area:' + area).length;
+    return `<button class="chip" data-area="${esc(area)}" data-c="${c}" data-tip="${n} ${tip}"><i class="d"></i>${esc(area)} <b>${n}</b></button>`; }).join('') +
+    '</div><div class="row">' + TYPES.filter(t => counts[t[0]]).map(t => `<button class="chip" data-kind="${t[0]}" data-tip="${counts[t[0]]} ${t[2]} files, drawn as ${GLYPH[SHAPE[t[0]]]}. The kind also rides the outer ring as a badge. Click to show only this kind.">${GLYPH[SHAPE[t[0]]]} ${t[2]} <b>${counts[t[0]]}</b></button>`).join('') + '</div>';
+  document.querySelectorAll('#chips [data-c]').forEach(c => c.style.setProperty('--c', c.dataset.c));
+  chipState();
+}
+function chipState() {
+  document.querySelectorAll('#chips [data-area]').forEach(c => { c.classList.toggle('off', !!S.areaOnly && c.dataset.area !== S.areaOnly); c.classList.toggle('on', c.dataset.area === S.areaOnly); });
+  document.querySelectorAll('#chips [data-kind]').forEach(c => c.classList.toggle('off', !!S.typeOnly && c.dataset.kind !== S.typeOnly));
 }
 
 // ---------- layouts ----------
@@ -187,19 +206,40 @@ function layout(view) {
   return L;
 }
 
-// Orbit: the Rings layout laid flat as a disc, tilted toward you and turning on its own (2.5D).
+// 3D Orbit: a wireframe sphere. The repo sits in the middle, each area is a hub inside the sphere
+// (spread evenly by a Fibonacci spiral), and its files form a cloud around the hub. Positions are
+// seeded by file id, so the same repo always gives the same picture.
+function seeded(id) {
+  let h = 2166136261;
+  for (const c of id) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return (h >>> 0) / 4294967296; };
+}
 function orbit3d() {
   if (S.orbit) return;
-  const R = layout('rings'), P = new Map();
-  R.forEach(([x, y], id) => P.set(id, [x, 0, y]));
+  const R = CONFIG.orbitRadius, P = new Map([['root', [0, 0, 0]]]), golden = Math.PI * (3 - Math.sqrt(5));
+  const areas = S.areas.filter(a => S.areaColor.has(a.area)).sort((a, b) => [...S.areaColor.keys()].indexOf(a.area) - [...S.areaColor.keys()].indexOf(b.area));
+  areas.forEach((a, i) => {
+    const y = 1 - (i + 0.5) / areas.length * 2, s = Math.sqrt(1 - y * y), t = i * golden, d = R * CONFIG.orbitHubAt;
+    const hub = [Math.cos(t) * s * d, -y * d, Math.sin(t) * s * d];
+    P.set(a.id, hub);
+    const kids = S.out.get(a.id).filter(e => e.why === 'area').map(e => e.b), spread = R * 0.2 * Math.cbrt(kids.length + 2);
+    kids.forEach(n => {
+      const rnd = seeded(n.id), u = rnd() * 2 - 1, th = rnd() * 2 * Math.PI, rr = spread * Math.cbrt(0.12 + 0.88 * rnd()), q = Math.sqrt(1 - u * u);
+      let p = [hub[0] + Math.cos(th) * q * rr, hub[1] + u * rr, hub[2] + Math.sin(th) * q * rr];
+      const m = Math.hypot(...p); if (m > R * 0.97) p = p.map(v => v * R * 0.97 / m);  // stay inside the sphere
+      P.set(n.id, p);
+    });
+  });
   S.orbit = P;
-  S.orbitRadii = [...new Set([...R.values()].map(([x, y]) => Math.round(Math.hypot(x, y))))].filter(r => r > 0);
+  S.orbitKinds = TYPES.filter(t => S.mems.some(n => n.kind === t[0]));
 }
-// Turn a 3D point by the Orbit's yaw (around the root) and pitch (tilt). Returns [x, y, z]; z > 0 faces you.
+// Turn a 3D point by yaw (around the vertical axis), then pitch (top leans toward you), then add
+// perspective. Returns [x, y, z] in layout px; z > 0 faces you.
 function turn([x, y, z]) {
   const cy = Math.cos(S.yaw), sy = Math.sin(S.yaw), cp = Math.cos(S.pitch), sp = Math.sin(S.pitch);
-  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
-  return [x1, y * cp - z1 * sp, y * sp + z1 * cp];
+  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy, y2 = y * cp + z1 * sp, z2 = -y * sp + z1 * cp;
+  const f = CONFIG.orbitPerspective * CONFIG.orbitRadius, k = f / (f - z2);
+  return [x1 * k, y2 * k, z2];
 }
 
 function setView(view, animate = true) {
@@ -210,6 +250,7 @@ function setView(view, animate = true) {
   if (!animate) S.nodes.forEach(n => { n.x = n.tx; n.y = n.ty; });
   else { S.nodes.forEach(n => { n.fx = n.x; n.fy = n.y; }); S.anim = { t0: performance.now() }; }
   S.spin = 0;
+  $('#chips').hidden = view !== 'orbit';
   writeHash();
 }
 
@@ -253,7 +294,7 @@ function frame(now) {
   }
   if (S.motion && (S.view === 'rings' || S.view === 'areas') && !S.hover && !S.fly) S.spin += CONFIG.spinPerSec / 60;
   if (S.view === 'orbit') {
-    if (!S.hover && !drag && !S.fly) S.yaw += CONFIG.orbitSpinPerSec / 60;  // turns on its own; hover or drag holds it
+    if (!S.hover && !S.badge && !drag && !S.fly) S.yaw += CONFIG.orbitSpinPerSec / 60;  // turns on its own; hover or drag holds it
     S.nodes.forEach(n => { const p = S.orbit.get(n.id); if (!p) return; const q = turn(p); n.tx = q[0]; n.ty = q[1]; n.z = q[2]; if (!S.anim) { n.x = n.tx; n.y = n.ty; } });
   }
   draw();
@@ -261,13 +302,8 @@ function frame(now) {
 function draw() {
   const r = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, r.width, r.height);
+  if (S.view === 'orbit') return drawOrbit(r);
   if (S.view === 'timeline') drawAxis(r);
-  const globe = S.view === 'orbit', back = n => globe && n.z < -1;
-  if (globe) {  // faint orbit path per ring
-    const [cx, cy] = toScreen(0, 0), sq = Math.abs(Math.sin(S.pitch));
-    ctx.strokeStyle = 'rgba(110,168,254,.18)';
-    (S.orbitRadii || []).forEach(r0 => { ctx.beginPath(); ctx.ellipse(cx, cy, r0 * S.cam.k, r0 * S.cam.k * sq, 0, 0, 2 * Math.PI); ctx.stroke(); });
-  }
   const focus = S.hover || S.selected, near = focus ? neighbours(focus) : null;
   ctx.lineWidth = 1;
   for (const e of S.edges) {
@@ -275,30 +311,27 @@ function draw() {
     if (S.view === 'timeline' && e.why !== 'link') continue;
     const lit = focus && (e.a === focus || e.b === focus);
     if (focus && !lit && S.view !== 'links' && e.why === 'area') continue;
-    if ((globe || S.view === 'circle') && e.why === 'area' && !lit) continue;  // area spokes would hide the links
+    if (S.view === 'circle' && e.why === 'area' && !lit) continue;  // area spokes would hide the links
     const [x1, y1] = toScreen(e.a.x, e.a.y), [x2, y2] = toScreen(e.b.x, e.b.y);
-    ctx.globalAlpha = back(e.a) || back(e.b) ? 0.3 : 1;
     ctx.strokeStyle = lit ? 'rgba(110,168,254,.9)' : e.why === 'link' ? `rgba(199,146,234,${focus ? .08 : .35})` : `rgba(140,150,170,${focus ? .03 : .09})`;
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   }
   ctx.globalAlpha = 1;
   const showAll = S.names || S.cam.k >= CONFIG.labelZoom, labels = [];
   ctx.font = '11px -apple-system, sans-serif';
-  const order = globe ? [...S.nodes].sort((a, b) => a.z - b.z) : S.nodes;  // Orbit: far side first
-  for (const n of order) {
+  for (const n of S.nodes) {
     if (!visible(n)) continue;
     const [x, y] = toScreen(n.x, n.y);
-    const depth = globe ? 0.85 + 0.25 * Math.max(-1, Math.min(1, n.z / 400)) : 1;
-    const rad = n.r * Math.max(0.6, Math.min(S.cam.k, 2.5)) * depth;
+    const rad = n.r * Math.max(0.6, Math.min(S.cam.k, 2.5));
     if (x < -40 || y < -40 || x > r.width + 40 || y > r.height + 40) continue;
-    ctx.globalAlpha = (near && !near.has(n.id) ? 0.12 : 1) * (back(n) ? 0.55 : 1);
+    ctx.globalAlpha = near && !near.has(n.id) ? 0.12 : 1;
     ctx.fillStyle = COLOR[n.kind] || COLOR.other;
     ctx.beginPath();
     if (n.kind === 'area') ctx.rect(x - rad, y - rad, rad * 2, rad * 2);
     else ctx.arc(x, y, rad, 0, 2 * Math.PI);
     ctx.fill();
     if (n.kind === 'root' || n === S.selected) { ctx.strokeStyle = '#6ea8fe'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
-    const label = n.kind === 'root' || (n.kind === 'area' && (S.view === 'areas' || S.view === 'circle' || globe)) || showAll || (near && near.has(n.id));
+    const label = n.kind === 'root' || (n.kind === 'area' && (S.view === 'areas' || S.view === 'circle')) || showAll || (near && near.has(n.id));
     if (label) labels.push({ n, x, y, rad, pri: n === focus ? 0 : n.kind === 'root' ? 1 : near && near.has(n.id) ? 2 : n.kind === 'area' ? 3 : 4 });
   }
   ctx.globalAlpha = 1;
@@ -306,22 +339,175 @@ function draw() {
 }
 // Labels never overlap: most important first; each tries right, left, above, below of its dot and is
 // skipped if all four are taken. Hover a dot to see a skipped name.
-function drawLabels(labels, r) {
-  const taken = S.view === 'timeline' ? [[0, 0, CONFIG.labelGutter, r.height]] : [];
+function drawLabels(labels, r, pre = []) {
+  const taken = S.view === 'timeline' ? [[0, 0, CONFIG.labelGutter, r.height]] : [...pre];
   const free = b => b[0] >= 0 && b[2] <= r.width && b[1] >= 0 && b[3] <= r.height && !taken.some(t => b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]);
   labels.sort((a, b) => a.pri - b.pri || b.n.deg - a.n.deg);
   ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0d1017';
+  const font = ctx.font;
   for (const L of labels) {
-    const w = ctx.measureText(L.n.name).width, { x, y, rad } = L;
-    const spots = [[x + rad + 3, y + 4], [x - rad - 3 - w, y + 4], [x - w / 2, y - rad - 4], [x - w / 2, y + rad + 12]];
-    const at = spots.map(([lx, ly]) => [lx, ly, [lx - 1, ly - 10, lx + w + 1, ly + 3]]).find(s => free(s[2]));
+    ctx.font = L.font || font;
+    const text = L.text || L.n.name, sub = L.sub ? 12 : 0, w = Math.max(ctx.measureText(text).width, L.sub ? ctx.measureText(L.sub).width : 0), { x, y, rad } = L;
+    const spots = [[x + rad + 4, y + 4 - sub / 2], [x - rad - 4 - w, y + 4 - sub / 2], [x - w / 2, y - rad - 4 - sub], [x - w / 2, y + rad + 12]];
+    const at = spots.map(([lx, ly]) => [lx, ly, [lx - 1, ly - 10, lx + w + 1, ly + 3 + sub]]).find(s => free(s[2]));
     if (!at && L.pri > 1) continue;
     const [lx, ly, box] = at || [spots[0][0], spots[0][1], null];
     if (box) taken.push(box);
-    ctx.strokeText(L.n.name, lx, ly); ctx.fillStyle = '#e6e9ef'; ctx.fillText(L.n.name, lx, ly);
+    ctx.strokeText(text, lx, ly); ctx.fillStyle = L.color || '#e6e9ef'; ctx.fillText(text, lx, ly);
+    if (L.sub) { ctx.strokeText(L.sub, lx, ly + sub); ctx.fillStyle = L.subColor || '#8a93a6'; ctx.fillText(L.sub, lx, ly + sub); }
   }
+  ctx.font = font;
   ctx.lineWidth = 1;
   if (S.view === 'timeline') drawLanes(r);
+}
+// ---------- 3D Orbit drawing ----------
+// Shape by kind (colour is by area in this view). GLYPH is the same shape as text, for the chips.
+const SHAPE = { record: 'circle', thread: 'diamond', artifact: 'square', handoff: 'triangle', project: 'target', policy: 'hexagon', prompt: 'down', schema: 'box', global: 'star', other: 'circle' };
+const GLYPH = { circle: '●', diamond: '◆', square: '■', triangle: '▲', target: '◎', hexagon: '⬡', down: '▼', box: '□', star: '✦' };
+function poly(x, y, s, n, a0, inner) {
+  ctx.beginPath();
+  const m = inner ? n * 2 : n;
+  for (let i = 0; i < m; i++) { const a = a0 + i * 2 * Math.PI / m, d = inner && i % 2 ? s * inner : s; ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * d, y + Math.sin(a) * d); }
+  ctx.closePath();
+}
+function shape(kind, x, y, s) {
+  const sh = SHAPE[kind] || 'circle';
+  ctx.lineWidth = 1.2;
+  if (sh === 'target') { [1.35, 0.8].forEach(f => { ctx.beginPath(); ctx.arc(x, y, s * f, 0, 2 * Math.PI); ctx.stroke(); }); ctx.beginPath(); ctx.arc(x, y, s * 0.35, 0, 2 * Math.PI); ctx.fill(); return; }
+  if (sh === 'box') { ctx.strokeRect(x - s, y - s, 2 * s, 2 * s); return; }
+  if (sh === 'hexagon') { poly(x, y, s * 1.2, 6, Math.PI / 6); ctx.stroke(); return; }
+  if (sh === 'diamond') poly(x, y, s * 1.3, 4, 0);
+  else if (sh === 'square') poly(x, y, s * 1.25, 4, Math.PI / 4);
+  else if (sh === 'triangle') poly(x, y, s * 1.4, 3, -Math.PI / 2);
+  else if (sh === 'down') poly(x, y, s * 1.4, 3, Math.PI / 2);
+  else if (sh === 'star') poly(x, y, s * 1.5, 4, -Math.PI / 2, 0.45);
+  else { ctx.beginPath(); ctx.arc(x, y, s, 0, 2 * Math.PI); }
+  ctx.fill();
+}
+// Line icon per kind, drawn inside the ring badges.
+function icon(kind, x, y, s) {
+  ctx.beginPath();
+  const M = (a, b) => ctx.moveTo(x + a * s, y + b * s), L = (a, b) => ctx.lineTo(x + a * s, y + b * s);
+  if (kind === 'record') { ctx.rect(x - 0.7 * s, y - s, 1.4 * s, 2 * s); M(-0.4, -0.3); L(0.4, -0.3); M(-0.4, 0.2); L(0.4, 0.2); }
+  else if (kind === 'thread') { ctx.rect(x - s, y - 0.75 * s, 2 * s, 1.3 * s); M(-0.4, 0.55); L(-0.7, 1); L(0, 0.55); }
+  else if (kind === 'artifact') { poly(x, y, s, 6, Math.PI / 6); M(0, 0); L(0, -1); M(0, 0); L(0.87, 0.5); M(0, 0); L(-0.87, 0.5); }
+  else if (kind === 'handoff') { M(-1, 0); L(1, -0.8); L(0.2, 1); L(-0.1, 0.15); ctx.closePath(); M(-0.1, 0.15); L(1, -0.8); }
+  else if (kind === 'project') { M(-1, 0.8); L(-1, -0.7); L(-0.3, -0.7); L(-0.1, -0.45); L(1, -0.45); L(1, 0.8); ctx.closePath(); }
+  else if (kind === 'policy') { M(0, -1); L(0.85, -0.6); ctx.quadraticCurveTo(x + 0.8 * s, y + 0.6 * s, x, y + s); ctx.quadraticCurveTo(x - 0.8 * s, y + 0.6 * s, x - 0.85 * s, y - 0.6 * s); ctx.closePath(); }
+  else if (kind === 'prompt') { M(-0.8, 0.8); L(-0.6, 0.2); L(0.5, -0.9); L(0.9, -0.5); L(-0.2, 0.6); ctx.closePath(); }
+  else if (kind === 'schema') { ctx.ellipse(x, y - 0.6 * s, 0.8 * s, 0.3 * s, 0, 0, 2 * Math.PI); M(-0.8, -0.6); L(-0.8, 0.6); M(0.8, -0.6); L(0.8, 0.6); ctx.moveTo(x + 0.8 * s, y + 0.6 * s); ctx.ellipse(x, y + 0.6 * s, 0.8 * s, 0.3 * s, 0, 0, Math.PI); }
+  else if (kind === 'global') { ctx.arc(x, y, s, 0, 2 * Math.PI); ctx.moveTo(x + 0.45 * s, y); ctx.ellipse(x, y, 0.45 * s, s, 0, 0, 2 * Math.PI); M(-1, 0); L(1, 0); }
+  else ctx.arc(x, y, 0.3 * s, 0, 2 * Math.PI);
+  ctx.stroke();
+}
+function drawOrbit(r) {
+  const R = CONFIG.orbitRadius, k = S.cam.k, zoom = Math.max(0.7, Math.min(k, 2.5));
+  const near01 = z => Math.max(0, Math.min(1, (z / R + 1) / 2));  // 0 = far side, 1 = near side
+  // Night sky: navy in the middle, a warm glow at the left and right edges.
+  let g = ctx.createRadialGradient(r.width / 2, r.height / 2, 0, r.width / 2, r.height / 2, Math.max(r.width, r.height) * 0.75);
+  g.addColorStop(0, '#0f1728'); g.addColorStop(1, '#06080e'); ctx.fillStyle = g; ctx.fillRect(0, 0, r.width, r.height);
+  [[0, 0.35, 0.16], [r.width, 0.6, 0.08]].forEach(([gx, gy, a]) => {
+    g = ctx.createRadialGradient(gx, r.height * gy, 0, gx, r.height * gy, r.width * 0.55);
+    g.addColorStop(0, `rgba(255,140,60,${a})`); g.addColorStop(1, 'rgba(255,140,60,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, r.width, r.height);
+  });
+  // Wireframe: each line is cut into short pieces so the far side can be fainter than the near side.
+  const line = (f, n, a0, a1) => {
+    let prev = null;
+    for (let i = 0; i <= n; i++) {
+      const q = turn(f(i / n * 2 * Math.PI)), [x, y] = toScreen(q[0], q[1]);
+      if (prev) { ctx.globalAlpha = a0 + (a1 - a0) * near01((q[2] + prev[2]) / 2); ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(x, y); ctx.stroke(); }
+      prev = [x, y, q[2]];
+    }
+  };
+  ctx.lineWidth = 1; ctx.strokeStyle = '#a9b8d8';
+  for (let m = 0; m < 6; m++) { const ph = m * Math.PI / 6; line(t => [R * Math.sin(t) * Math.cos(ph), -R * Math.cos(t), R * Math.sin(t) * Math.sin(ph)], 72, 0.02, 0.09); }
+  [-60, -30, 0, 30, 60].forEach(d => { const a = d * Math.PI / 180, y = -R * Math.sin(a), c = R * Math.cos(a); line(t => [c * Math.cos(t), y, c * Math.sin(t)], 72, 0.02, 0.09); });
+  const f = CONFIG.orbitPerspective * R, [cx, cy] = toScreen(0, 0);
+  ctx.globalAlpha = 0.12; ctx.beginPath(); ctx.arc(cx, cy, R * f / Math.sqrt(f * f - R * R) * k, 0, 2 * Math.PI); ctx.stroke();
+  // Outer ring with one badge per kind.
+  const RR = R * CONFIG.orbitRingAt, ring = t => [RR * Math.cos(t), R * CONFIG.orbitRingDrop, RR * Math.sin(t)];
+  ctx.strokeStyle = '#dfe6f5'; line(ring, 144, 0.12, 0.5);
+  S.badges = (S.orbitKinds || []).map((t, i) => { const q = turn(ring(i / S.orbitKinds.length * 2 * Math.PI)), [x, y] = toScreen(q[0], q[1]); return { kind: t[0], x, y, z: q[2], r: (7 + 5 * near01(q[2])) * zoom }; });
+  const badge = b => {
+    const on = !S.typeOnly || S.typeOnly === b.kind;
+    ctx.globalAlpha = (0.35 + 0.65 * near01(b.z)) * (on ? 1 : 0.3);
+    poly(b.x, b.y, b.r, 6, Math.PI / 6); ctx.fillStyle = '#0c111b'; ctx.fill();
+    ctx.lineWidth = b === S.badge ? 2 : 1.3; ctx.strokeStyle = b === S.badge ? '#ffffff' : '#c9d3e8'; ctx.stroke();
+    ctx.lineWidth = 1.2; icon(b.kind, b.x, b.y, b.r * 0.45);
+  };
+  S.badges.filter(b => b.z < 0).forEach(badge);
+  // Links: faint, fainter on the far side. Area spokes fainter still.
+  const focus = S.hover || S.selected, near = focus ? neighbours(focus) : null, col = n => S.areaColor.get(n.area) || '#8a93a6';
+  ctx.lineWidth = 1;
+  for (const e of S.edges) {
+    if (!visible(e.a) || !visible(e.b)) continue;
+    const lit = focus && (e.a === focus || e.b === focus), d = near01((e.a.z + e.b.z) / 2);
+    if (focus && !lit && e.why === 'area') continue;
+    const [x1, y1] = toScreen(e.a.x, e.a.y), [x2, y2] = toScreen(e.b.x, e.b.y);
+    ctx.globalAlpha = lit ? 0.9 : focus ? 0.04 : e.why === 'link' ? 0.06 + 0.16 * d : 0.02 + 0.04 * d;
+    ctx.strokeStyle = lit ? '#ffffff' : e.why === 'link' ? '#d7deec' : col(e.a.kind === 'root' ? e.b : e.a);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  // Nodes, far side first.
+  const showAll = S.names || k >= CONFIG.labelZoom, labels = [], pre = [], mono = '9px ui-monospace, Menlo, monospace';
+  let root = null;
+  for (const n of [...S.nodes].sort((a, b) => a.z - b.z)) {
+    if (!visible(n)) continue;
+    const [x, y] = toScreen(n.x, n.y);
+    if (x < -40 || y < -40 || x > r.width + 40 || y > r.height + 40) continue;
+    const d = near01(n.z), sc = (0.55 + 0.55 * d) * zoom, c = col(n);
+    ctx.globalAlpha = (near && !near.has(n.id) ? 0.12 : 1) * (0.3 + 0.62 * d);
+    ctx.fillStyle = c; ctx.strokeStyle = c;
+    let rad;
+    if (n.kind === 'root') {
+      rad = 12 * zoom; root = { x, y, rad };
+      ctx.globalAlpha = 1; ctx.shadowColor = '#ff8a3d'; ctx.shadowBlur = 22;
+      poly(x, y, rad, 6, Math.PI / 6); ctx.fillStyle = '#1b130d'; ctx.fill(); ctx.lineWidth = 2.2; ctx.strokeStyle = '#ff8a3d'; ctx.stroke();
+      ctx.shadowBlur = 0; poly(x, y, rad * 0.5, 6, Math.PI / 6); ctx.lineWidth = 1.4; ctx.stroke();
+    } else if (n.kind === 'area') {
+      rad = 6.5 * sc;
+      ctx.shadowColor = c; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(x, y, rad, 0, 2 * Math.PI); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = '#0b0f17'; ctx.font = `bold ${Math.max(7, Math.round(rad * 1.2))}px ui-monospace, Menlo, monospace`; ctx.textAlign = 'center';
+      ctx.fillText(n.name[0].toUpperCase(), x, y + rad * 0.38); ctx.textAlign = 'left';
+      if (n !== S.hover) labels.push({ n, x, y, rad, pri: n === focus ? 0 : 3, text: n.name.toUpperCase(), sub: String(S.out.get(n.id).length), subColor: c, font: mono, color: '#aeb6c8' });
+    } else {
+      rad = (1.3 + Math.sqrt(n.deg) * 0.45) * sc; shape(n.kind, x, y, rad);
+      if (n !== S.hover && (showAll || (near && near.has(n.id)))) labels.push({ n, x, y, rad, pri: n === focus ? 0 : near && near.has(n.id) ? 2 : 4 });
+    }
+    if (n === S.selected) { ctx.globalAlpha = 1; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, rad + 4, 0, 2 * Math.PI); ctx.stroke(); }
+  }
+  S.badges.filter(b => b.z >= 0).forEach(badge);
+  ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  // The repo name in a box under the root hexagon.
+  if (root) {
+    ctx.font = '600 10px ui-monospace, Menlo, monospace';
+    const t = S.byId.get('root').name.toUpperCase(), w = ctx.measureText(t).width, bx = root.x - w / 2 - 6, by = root.y + root.rad + 6;
+    if (S.hover?.kind !== 'root') {
+      ctx.fillStyle = 'rgba(8,10,16,.88)'; ctx.fillRect(bx, by, w + 12, 16);
+      ctx.strokeStyle = 'rgba(255,138,61,.5)'; ctx.strokeRect(bx, by, w + 12, 16);
+      ctx.fillStyle = '#f3f5fa'; ctx.fillText(t, bx + 6, by + 11.5);
+    }
+    pre.push([bx, by, bx + w + 12, by + 16], [root.x - root.rad, root.y - root.rad, root.x + root.rad, root.y + root.rad]);
+  }
+  const chips = $('#chips'); if (!chips.hidden) pre.push([0, 0, r.width, chips.offsetHeight + 10]);
+  ctx.font = '11px -apple-system, sans-serif';
+  drawLabels(labels, r, pre);
+  if (S.hover) hoverTag(S.hover, r);
+}
+// Hover tag: a short kind tag, then the name and the start of the description, in one dark box.
+function hoverTag(n, r) {
+  const [x, y] = toScreen(n.x, n.y), tag = (n.kind === 'root' ? 'repo' : n.kind).slice(0, 5).toUpperCase();
+  const text = n.name + (n.description ? ' · ' + (n.description.length > 48 ? n.description.slice(0, 47) + '…' : n.description) : '');
+  ctx.font = '600 9px ui-monospace, Menlo, monospace'; const tw = ctx.measureText(tag).width;
+  ctx.font = '11px -apple-system, sans-serif'; const w = Math.min(ctx.measureText(text).width, r.width - tw - 40);
+  let bx = x - (tw + w + 22) / 2, by = y + 18;
+  bx = Math.max(4, Math.min(bx, r.width - tw - w - 26)); if (by + 20 > r.height) by = y - 38;
+  ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(8,10,16,.94)'; ctx.fillRect(bx, by, tw + w + 22, 20);
+  ctx.strokeStyle = 'rgba(160,172,196,.35)'; ctx.strokeRect(bx, by, tw + w + 22, 20);
+  ctx.fillStyle = n.kind === 'root' ? '#ff8a3d' : S.areaColor.get(n.area) || '#8a93a6';
+  ctx.font = '600 9px ui-monospace, Menlo, monospace'; ctx.fillText(tag, bx + 7, by + 13.5);
+  ctx.fillStyle = '#e6e9ef'; ctx.font = '11px -apple-system, sans-serif';
+  ctx.save(); ctx.beginPath(); ctx.rect(bx + tw + 13, by, w + 4, 20); ctx.clip(); ctx.fillText(text, bx + tw + 14, by + 14); ctx.restore();
 }
 // Timeline lane names sit in a fixed gutter on the left, so dots and pans never cover them.
 function drawLanes(r) {
@@ -348,7 +534,14 @@ function fit(animate = true) {
   const vis = S.nodes.filter(visible); if (!vis.length) return;
   const xs = vis.map(n => n.tx), ys = vis.map(n => n.ty), r = canvas.getBoundingClientRect();
   if (!r.width || !r.height) { requestAnimationFrame(() => fit(animate)); return; }
-  if (S.view === 'orbit') { orbit3d(); const m = Math.max(...S.orbitRadii); go(0, 0, Math.min(r.width / (2 * m + 60), r.height / (2 * m * Math.abs(Math.sin(S.pitch)) + 60), 3), animate); return; }
+  if (S.view === 'orbit') {  // fit the ring across and the sphere top to bottom, below the chips
+    orbit3d();
+    const top = $('#chips').hidden ? 0 : $('#chips').offsetHeight + 8, R = CONFIG.orbitRadius, RR = R * CONFIG.orbitRingAt, pts = [];
+    for (let i = 0; i < 72; i++) { const t = i / 72 * 2 * Math.PI; pts.push(turn([RR * Math.cos(t), R * CONFIG.orbitRingDrop, RR * Math.sin(t)]), turn([R * Math.cos(t), R * Math.sin(t), 0].map((v, j) => j === 2 ? 0 : v))); }
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), minY = Math.min(...ys, -R * 1.05), maxY = Math.max(...ys);
+    const k = Math.min(r.width / (Math.max(...xs) - Math.min(...xs) + 40), (r.height - top) / (maxY - minY + 40), 3);
+    go(0, (minY + maxY) / 2 - top / 2 / k, k, animate); return;
+  }
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const left = S.view === 'timeline' ? CONFIG.labelGutter : 0;
   const k = Math.min((r.width - left) / (maxX - minX + 80), r.height / (maxY - minY + 80), 3);
@@ -360,7 +553,7 @@ function go(x, y, k, animate = true) {
   S.fly = { t0: performance.now(), x0: S.cam.x, y0: S.cam.y, k0: S.cam.k, x1: x, y1: y, k1: k };
 }
 function flyTo(n) {
-  if (S.areaOnly && n.area !== S.areaOnly) { S.areaOnly = ''; $('#area').value = ''; }
+  if (S.areaOnly && n.area !== S.areaOnly) { S.areaOnly = ''; $('#area').value = ''; chipState(); }
   if (S.typeOnly && isMem(n) && n.kind !== S.typeOnly) setType(null);
   if (S.view === 'orbit' && S.orbit.has(n.id)) {  // turn the Orbit so the memory is at the front
     const [x, , z] = S.orbit.get(n.id); S.yaw = Math.atan2(-x, z);
@@ -561,10 +754,16 @@ window.addEventListener('popstate', () => {
 function setType(t) {
   S.typeOnly = t;
   document.querySelectorAll('#types li').forEach(li => li.classList.toggle('off', !!t && li.dataset.type !== t));
+  chipState();
 }
+$('#chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  if (c.dataset.kind) return setType(S.typeOnly === c.dataset.kind ? null : c.dataset.kind);
+  S.areaOnly = S.areaOnly === c.dataset.area || !c.dataset.area ? '' : c.dataset.area; $('#area').value = S.areaOnly; chipState();
+});
 document.querySelectorAll('.views button').forEach(b => b.addEventListener('click', () => { setView(b.dataset.view); setTimeout(fit, CONFIG.morphMs); }));
 $('#types').addEventListener('click', e => { const li = e.target.closest('li'); if (li) setType(S.typeOnly === li.dataset.type ? null : li.dataset.type); });
-$('#area').addEventListener('change', e => { S.areaOnly = e.target.value; fit(); });
+$('#area').addEventListener('change', e => { S.areaOnly = e.target.value; chipState(); fit(); });
 $('#names').addEventListener('click', e => { S.names = !S.names; e.currentTarget.setAttribute('aria-pressed', S.names); });
 $('#motion').addEventListener('click', e => { S.motion = !S.motion; e.currentTarget.setAttribute('aria-pressed', S.motion); if (!S.motion) S.spin = 0; });
 $('#fit').addEventListener('click', () => fit());
@@ -636,7 +835,10 @@ function pick(n) { $('#hits').hidden = true; flyTo(n); openCard(n); }
 let drag = null;
 canvas.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY, cx: S.cam.x, cy: S.cam.y, yaw: S.yaw, pitch: S.pitch, moved: false }; });
 window.addEventListener('mouseup', e => {
-  if (drag && !drag.moved) { const r = canvas.getBoundingClientRect(), n = hit(e.clientX - r.left, e.clientY - r.top); if (n && e.target === canvas) openCard(n); }
+  if (drag && !drag.moved && e.target === canvas) {
+    const r = canvas.getBoundingClientRect(), n = S.badge ? null : hit(e.clientX - r.left, e.clientY - r.top);
+    if (S.badge) setType(S.typeOnly === S.badge.kind ? null : S.badge.kind); else if (n) openCard(n);
+  }
   drag = null; canvas.classList.remove('drag');
 });
 canvas.addEventListener('mousemove', e => {
@@ -644,15 +846,17 @@ canvas.addEventListener('mousemove', e => {
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; canvas.classList.add('drag'); S.fly = null; }
-    if (S.view === 'orbit') { S.yaw = drag.yaw + dx * CONFIG.orbitDragRad; S.pitch = Math.max(0.1, Math.min(1.5, drag.pitch + dy * CONFIG.orbitDragRad)); }
+    if (S.view === 'orbit') { S.yaw = drag.yaw + dx * CONFIG.orbitDragRad; S.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + dy * CONFIG.orbitDragRad)); }
     else { S.cam.x = drag.cx - dx / S.cam.k; S.cam.y = drag.cy - dy / S.cam.k; }
     return;
   }
-  S.hover = hit(e.clientX - r.left, e.clientY - r.top);
-  canvas.classList.toggle('over', !!S.hover);
-  canvas.title = S.hover ? `${S.hover.name}\n${LABEL[S.hover.kind] || S.hover.kind}${S.hover.area ? ' · ' + S.hover.area : ''}\n${S.hover.description || ''}` : '';
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  S.badge = S.view === 'orbit' ? S.badges.find(b => Math.hypot(b.x - mx, b.y - my) < b.r) || null : null;  // a badge wins over a dot under it
+  S.hover = S.badge ? null : hit(mx, my);
+  canvas.classList.toggle('over', !!(S.hover || S.badge));
+  canvas.title = S.badge ? `${LABEL[S.badge.kind]} files: ${S.mems.filter(n => n.kind === S.badge.kind).length}\nDrawn as ${GLYPH[SHAPE[S.badge.kind]]}. Click to show only this kind; click again for all.` : S.hover ? `${S.hover.name}\n${LABEL[S.hover.kind] || S.hover.kind}${S.hover.area ? ' · ' + S.hover.area : ''}\n${S.hover.description || ''}` : '';
 });
-canvas.addEventListener('mouseleave', () => { S.hover = null; });
+canvas.addEventListener('mouseleave', () => { S.hover = null; S.badge = null; });
 canvas.addEventListener('wheel', e => {
   e.preventDefault(); S.fly = null;
   const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
