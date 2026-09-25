@@ -97,13 +97,89 @@ class Server(unittest.TestCase):
         self.assertEqual(self.get("/../secret.txt")[0], 404)
         self.assertEqual(self.get("/serve.py")[0], 404)
 
-    def test_read_only(self):
-        for m in ("POST", "PUT", "DELETE", "PATCH"):
+    def test_no_other_methods(self):
+        for m in ("PUT", "DELETE", "PATCH"):
             self.assertEqual(self.get("/graph.json", m)[0], 405)
+        self.assertEqual(self.get("/graph.json", "POST")[0], 404)
 
-    def test_no_write_calls_in_server(self):
-        src = open(os.path.join(HERE, "serve.py")).read()
+    def test_server_writes_only_through_edit(self):
+        with open(os.path.join(HERE, "serve.py")) as fh:
+            src = fh.read()
         self.assertIsNone(re.search(r"open\([^)]*['\"][wax+]|os\.(remove|unlink|rename|replace|makedirs)|shutil\.", src))
+
+
+class Edits(unittest.TestCase):
+    """The write path: guards first, then create, update, conflict, archive."""
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        cls.repo = os.path.join(cls.tmp, "repo")
+        put(cls.repo, "records/a.md", "---\nid: a\nproject: p\n---\n# A\n")
+        write(cls.tmp, "outside.md", "not in the repo")
+        g = lambda *a: subprocess.run(["git", "-C", cls.repo, *a], check=True, capture_output=True)
+        subprocess.run(["git", "init", "-q", cls.repo], check=True)
+        g("config", "user.email", "t@example.com"); g("config", "user.name", "T")
+        g("add", "-A"); g("commit", "-q", "-m", "seed")
+        cls.saved = serve.GRAPH
+        serve.GRAPH = os.path.join(cls.tmp, "graph.json")
+        build_graph.main(["--out", serve.GRAPH, cls.repo])
+        cls.srv = serve.ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
+        cls.base = "http://127.0.0.1:%d" % cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown(); cls.srv.server_close(); serve.GRAPH = cls.saved
+
+    def post(self, path, body, token=None, headers=None):
+        h = {"Content-Type": "application/json", "X-Brain-Token": serve.TOKEN if token is None else token}
+        h.update(headers or {})
+        req = urllib.request.Request(self.base + path, json.dumps(body).encode(), h, method="POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+
+    def read(self, rel):
+        with open(os.path.join(self.repo, rel)) as fh:
+            return fh.read()
+
+    def test_1_guards(self):
+        body = {"rel": "records/x.md", "text": "x"}
+        self.assertEqual(self.post("/api/create", body, token="wrong")[0], 403)
+        self.assertEqual(self.post("/api/create", body, headers={"Origin": "http://evil.example"})[0], 403)
+        self.assertEqual(self.post("/api/create", body, headers={"Host": "evil.example:80"})[0], 403)
+        for rel in ("../outside.md", "/etc/x.md", "records/../../outside.md", "archive/x.md", ".git/x.md",
+                    "records/x.py", "nowhere/x.md", "records/.hidden.md", "records/a.md"):
+            self.assertEqual(self.post("/api/create", {"rel": rel, "text": "x"})[0], 400, rel)
+        self.assertEqual(self.post("/api/update", {"id": "mem:../outside.md", "text": "x", "base": ""})[0], 404)
+        with urllib.request.urlopen(self.base + "/api/session") as r:
+            self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))  # other sites cannot read the token
+
+    def test_2_create_update_conflict_archive(self):
+        code, out = self.post("/api/create", {"rel": "records/p/new.md", "text": "---\nproject: p\n---\n# New"})
+        self.assertEqual((code, self.read("records/p/new.md")), (200, "---\nproject: p\n---\n# New\n"))
+        self.assertTrue(out["commit"])
+        with urllib.request.urlopen(self.base + "/file?id=mem:records/a.md") as r:
+            base = r.headers["ETag"].strip('"')
+        self.assertEqual(self.post("/api/update", {"id": "mem:records/a.md", "text": "# A2", "base": base})[0], 200)
+        self.assertEqual(self.read("records/a.md"), "# A2\n")
+        self.assertEqual(self.post("/api/update", {"id": "mem:records/a.md", "text": "# A3", "base": base})[0], 409)
+        self.assertEqual(self.read("records/a.md"), "# A2\n")  # conflict did not overwrite
+        self.assertEqual(self.post("/api/archive", {"id": "mem:records/a.md", "reason": ""})[0], 400)
+        code, out = self.post("/api/archive", {"id": "mem:records/a.md", "reason": "old", "replacement": "records/p/new.md"})
+        self.assertEqual((code, out["archived_to"]), (200, "archive/records/a.md"))
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "records/a.md")))
+        self.assertEqual(self.read("archive/records/a.md"), "# A2\n")  # moved, not deleted
+        self.assertIn("`records/a.md` -> `archive/records/a.md`", self.read("archive/README.md"))
+        with open(serve.GRAPH) as fh:
+            ids = {n["id"] for n in json.load(fh)["nodes"]}
+        self.assertIn("mem:records/p/new.md", ids); self.assertNotIn("mem:records/a.md", ids)  # graph rebuilt
+        log = subprocess.run(["git", "-C", self.repo, "log", "--format=%s"], capture_output=True, text=True).stdout
+        self.assertEqual(log.count("(Brain View)"), 3)
+        status = subprocess.run(["git", "-C", self.repo, "status", "--short"], capture_output=True, text=True).stdout
+        self.assertEqual(status, "")  # every change committed, nothing left loose
 
 
 if __name__ == "__main__":

@@ -69,3 +69,8 @@ canvas.over { cursor: pointer; }
   .legend { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
 }
 .card a { color: var(--accent); }
+.nf label { display: block; margin: 10px 0 4px; color: var(--dim); font-size: 12px; }
+.nf input, .nf select { width: 100%; padding: 6px 8px; }
+.nf .path { margin-top: 10px; }
+#ed { display: block; width: 100%; min-height: 45vh; margin-top: 10px; padding: 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
+.note.red { color: var(--red); }

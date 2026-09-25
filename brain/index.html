@@ -22,6 +22,7 @@
   <div class="toggles">
     <button id="names" aria-pressed="false" title="Show every label">Names</button>
     <button id="motion" aria-pressed="false" title="Slow idle rotation in Rings and Areas">Motion</button>
+    <button id="new" title="Create a new memory file in the repo">New</button>
     <button id="fit" title="Fit every visible node on screen">Fit</button>
     <button id="full" title="Full screen">Full Screen</button>
   </div>
@@ -32,6 +33,7 @@
   <button class="stat" data-stat="memories"><b id="s-mem">–</b> Memories<i class="tip" data-tip="Count of .md and .yaml files in the memory repo, not counting .git, scripts/ or archive/. Click to list them all.">i</i></button>
   <button class="stat" data-stat="links"><b id="s-links">–</b> Links<i class="tip" data-tip="Count of related:, supersedes:, [[name]] and Markdown links that match another file in the repo, by path, id or file name. Click to open the Links view.">i</i></button>
   <button class="stat" data-stat="unresolved"><b id="s-unres">–</b> Unresolved<i class="tip" data-tip="Links that match no file in the repo. Free-text supersedes: notes are not counted. Click to list them.">i</i></button>
+  <button class="stat" data-stat="git"><b id="s-git">–</b> Not Pushed<i class="tip" data-tip="Local commits in the memory repo that GitHub does not have yet. New, Edit and Archive each commit locally and never push. Amber when above 0. Click for the push command.">i</i></button>
   <button class="stat" data-stat="built"><span id="s-built">–</span><i class="tip" data-tip="When build_graph.py last wrote data/graph.json. Amber after 24 hours. Click to see which repo it read.">i</i></button>
 </section>
 

@@ -36,10 +36,11 @@ const S = {
   graph: null, nodes: [], byId: new Map(), out: new Map(), inn: new Map(), edges: [],
   view: 'rings', layouts: {}, cam: { x: 0, y: 0, k: 1 }, hover: null, selected: null,
   typeOnly: null, areaOnly: '', names: false, motion: false, spin: 0, anim: null, fly: null,
+  session: null, dirty: false, started: false,
 };
 
 // ---------- data ----------
-async function load() {
+async function load(openId) {
   let g;
   try {
     const r = await fetch('/graph.json', { cache: 'no-store' });
@@ -49,7 +50,7 @@ async function load() {
     status('Could not read graph.json: ' + e.message, true);
     return;
   }
-  S.graph = g;
+  S.graph = g; S.byId = new Map(); S.out = new Map(); S.inn = new Map(); S.layouts = {};
   S.nodes = g.nodes.map(n => ({ ...n, x: 0, y: 0, tx: 0, ty: 0, deg: 0 }));
   S.nodes.forEach(n => { S.byId.set(n.id, n); S.out.set(n.id, []); S.inn.set(n.id, []); });
   S.edges = g.edges.filter(e => S.byId.has(e.from) && S.byId.has(e.to)).map(e => ({ a: S.byId.get(e.from), b: S.byId.get(e.to), why: e.why }));
@@ -58,12 +59,20 @@ async function load() {
   S.mems = S.nodes.filter(isMem);
   S.areas = S.nodes.filter(n => n.kind === 'area').sort((a, b) => a.name.localeCompare(b.name));
   fillChrome();
+  status(`${S.mems.length} memories · ${S.areas.length} areas · built ${g.built}`);
+  if (S.started) {
+    setView(S.view, false);
+    if (openId && S.byId.has(openId)) openCard(S.byId.get(openId), false); else closeCard(false);
+    writeHash(false);
+    return;
+  }
+  S.started = true;
   const h = readHash();
   setView(h.view || 'rings', false);
   fit(false);
   if (h.node && S.byId.has(h.node)) openCard(S.byId.get(h.node), false);
-  status(`${S.mems.length} memories · ${S.areas.length} areas · built ${g.built}`);
   requestAnimationFrame(frame);
+  session();
 }
 const isMem = n => n.kind !== 'root' && n.kind !== 'area';
 
@@ -81,6 +90,8 @@ function fillChrome() {
   $('#types').innerHTML = TYPES.filter(t => counts[t[0]]).map(t =>
     `<li data-type="${t[0]}"><span class="dot" data-c="${t[1]}"></span>${t[2]}<span class="n">${counts[t[0]]}</span></li>`).join('');
   document.querySelectorAll('.dot[data-c]').forEach(d => { d.style.background = d.dataset.c; });
+  if (S.areaOnly && !S.areas.some(a => a.area === S.areaOnly)) S.areaOnly = '';
+  $('#area').innerHTML = '<option value="">All Projects</option>';
   $('#area').insertAdjacentHTML('beforeend', S.areas.map(a => `<option value="${esc(a.area)}">${esc(a.name)} (${S.out.get(a.id).length})</option>`).join(''));
 }
 
@@ -288,6 +299,7 @@ function hit(mx, my) {
 
 // ---------- card ----------
 function openCard(n, push = true) {
+  if (!leaveOk()) return;
   S.selected = n;
   const outL = S.out.get(n.id), inL = S.inn.get(n.id);
   const item = e => { const m = e; return `<li data-go="${esc(m.id)}"><span class="dot" data-c="${COLOR[m.kind] || COLOR.other}"></span>${esc(m.name)}<small>${LABEL[m.kind] || m.kind}${m.area && m.kind !== 'area' ? ' · ' + esc(m.area) : ''}</small></li>`; };
@@ -297,7 +309,7 @@ function openCard(n, push = true) {
     <div class="meta">${LABEL[n.kind] || n.kind}${n.area && n.kind !== 'area' ? ' · Area ' + esc(n.area) : ''}${n.modified ? ' · Changed ' + esc(n.modified.slice(0, 10)) : ''} · ${n.deg} links</div>
     <p class="desc">${esc(n.description || '')}</p>`;
   if (n.path) html += `<div class="path">${esc(n.path)}</div>`;
-  html += `<div class="row"><button data-act="fly">Fly To</button>${n.path ? '<button data-act="copy">Copy Path</button>' : ''}${isMem(n) ? '<button data-act="open">Open File</button>' : ''}</div><div id="filebox"></div>`;
+  html += `<div class="row"><button data-act="fly">Fly To</button>${n.path ? '<button data-act="copy">Copy Path</button>' : ''}${isMem(n) ? '<button data-act="open">Open File</button><button data-act="edit">Edit</button><button data-act="archive">Archive</button>' : '<button data-act="new">New File' + (n.kind === 'area' ? ' Here' : '') + '</button>'}</div><div id="filebox"></div>`;
   if (n.kind === 'root') html += (n.url ? `<p><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></p>` : '') + list('Areas', outL.map(e => e.b), 'Every project named in the repo files: the project: field, else a Project: line, else the folder path.');
   else if (n.kind === 'area') html += list('Files', outL.map(e => e.b).sort((a, b) => a.name.localeCompare(b.name)), 'Every repo file that names this project.');
   else {
@@ -306,16 +318,18 @@ function openCard(n, push = true) {
     if (unres.length) html += `<h4>Unresolved (${unres.length}) <i class="tip" data-tip="related:, supersedes: or [[name]] entries in this file that match no file in the repo.">i</i></h4><ul>${unres.map(u => `<li>${esc(u.target)}</li>`).join('')}</ul>`;
     const R = S.graph.repo || {};
     if (R.url && n.rel) html += `<p><a href="${esc(R.url)}/blob/${esc(R.branch || 'main')}/${n.rel.split('/').map(encodeURIComponent).join('/')}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></p>`;
-    html += `<p class="note">Read only. Edit this file in the memory repo and push; the next build picks it up.</p>`;
+    html += `<p class="note">Edit and Archive write to the memory repo and make one local git commit each. Nothing is pushed: see Not Pushed.</p>`;
   }
   showCard(html);
   if (push) writeHash(true);
 }
 function openList(title, items, tip) {
+  if (!leaveOk()) return;
   S.selected = null;
   showCard(`<h3 id="card-title">${esc(title)}</h3><p class="note">${esc(tip)}</p><ul>${items.join('')}</ul>`);
 }
 function showCard(html) {
+  S.dirty = false;
   $('#card-body').innerHTML = html;
   $('#card-body').querySelectorAll('.dot[data-c]').forEach(d => { d.style.background = d.dataset.c; });
   $('#card').hidden = false; $('#shade').hidden = false;
@@ -323,6 +337,8 @@ function showCard(html) {
 }
 function closeCard(push = true) {
   if ($('#card').hidden) return;
+  if (!leaveOk()) return;
+  S.dirty = false;
   $('#card').hidden = true; $('#shade').hidden = true; S.selected = null;
   if (push) writeHash(true);
 }
@@ -336,6 +352,115 @@ async function openFile(n) {
   } catch (e) { box.innerHTML = `<p class="note">Could not read: ${esc(e.message)}</p>`; }
 }
 
+// ---------- create, edit, archive (all writes go to the server, which commits locally) ----------
+function leaveOk() { return !S.dirty || confirm('Discard unsaved changes?'); }
+async function session() {
+  try {
+    const r = await fetch('/api/session', { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    S.session = await r.json();
+  } catch (e) { S.session = null; }
+  gitChip();
+}
+function gitChip() {
+  const a = S.session?.git?.ahead;
+  $('#s-git').textContent = a ?? '–';
+  $('[data-stat="git"]').classList.toggle('amber', a > 0);
+}
+async function api(path, body) {
+  if (!S.session) await session();
+  if (!S.session) return { ok: false, text: 'no write session: is serve.py running?' };
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Token': S.session.token }, body: JSON.stringify(body) });
+  const t = await r.text();
+  let data = null; try { data = JSON.parse(t); } catch (e) { /* plain text error */ }
+  return { ok: r.ok, code: r.status, data, text: t };
+}
+function msg(text, bad) { const m = $('#edmsg'); if (m) { m.textContent = text; m.classList.toggle('red', !!bad); } }
+async function done(res, verb) {
+  S.session.git = res.data.git; gitChip();
+  const note = `${verb} ${res.data.rel}${res.data.commit ? ' · Commit ' + res.data.commit : ''} · ${res.data.git.ahead ?? '?'} not pushed`;
+  S.dirty = false;
+  await load(res.data.archived_to ? 'area:' + (S.selected?.area || '') : res.data.id);
+  status(note);
+}
+async function openEditor(n) {
+  const box = $('#filebox');
+  box.innerHTML = '<p class="note">Reading…</p>';
+  const r = await fetch('/file?id=' + encodeURIComponent(n.id), { cache: 'no-store' });
+  const t = await r.text();
+  if (!r.ok) { box.innerHTML = `<p class="note red">Could not read: ${esc(t)}</p>`; return; }
+  n.base = (r.headers.get('ETag') || '').replace(/"/g, '');
+  box.innerHTML = `<textarea id="ed" spellcheck="false" aria-label="File text"></textarea>
+    <div class="row"><button data-act="save">Save</button><button data-act="cancel">Cancel</button></div>
+    <p id="edmsg" class="note">Save writes ${esc(n.rel)} and makes one local commit. Cmd+S also saves.</p>`;
+  $('#ed').value = t; $('#ed').focus();
+}
+async function saveEdit(n) {
+  msg('Saving…');
+  const res = await api('/api/update', { id: n.id, text: $('#ed').value, base: n.base });
+  if (res.ok) return done(res, res.data.unchanged ? 'No change to' : 'Saved');
+  msg(res.code === 409 ? 'Not saved: the file changed on disk since you opened it. Copy your text, press Cancel, then Edit again.' : 'Not saved: ' + res.text, true);
+}
+function askArchive(n) {
+  $('#filebox').innerHTML = `<div class="nf">
+    <label for="ar-why">Reason (required)</label><input id="ar-why" placeholder="Why this file is no longer current">
+    <label for="ar-new">Replacement (optional)</label><input id="ar-new" placeholder="Path or id of the file that replaces it">
+    <div class="row"><button data-act="do-archive">Confirm Archive</button><button data-act="cancel">Cancel</button></div>
+    <p id="edmsg" class="note">Moves ${esc(n.rel)} to archive/${esc(n.rel)} and adds a line to archive/README.md. Nothing is deleted.</p></div>`;
+  $('#ar-why').focus();
+}
+async function doArchive(n) {
+  const reason = $('#ar-why').value.trim();
+  if (!reason) return msg('Give a reason first.', true);
+  msg('Archiving…');
+  const res = await api('/api/archive', { id: n.id, reason, replacement: $('#ar-new').value.trim() });
+  if (res.ok) return done(res, 'Archived');
+  msg('Not archived: ' + res.text, true);
+}
+const FOLDERS = [['records', 'Record'], ['threads', 'Thread'], ['artifacts', 'Artifact'], ['handoffs', 'Handoff'], ['projects', 'Project'], ['policies', 'Policy'], ['prompts', 'Prompt'], ['schemas', 'Schema'], ['global', 'Global']];
+const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '');
+function openNew(project) {
+  if (!leaveOk()) return;
+  S.selected = null; S.tplTouched = false;
+  showCard(`<h3 id="card-title">New File</h3><div class="nf">
+    <label for="nf-top">Folder <i class="tip" data-tip="Top folder in the repo. It sets the colour: records, threads, artifacts and so on.">i</i></label>
+    <select id="nf-top">${FOLDERS.map(f => `<option value="${f[0]}">${f[1]} (${f[0]}/)</option>`).join('')}</select>
+    <label for="nf-proj">Project <i class="tip" data-tip="Written to the project: field. It sets the area. Pick one or type a new name.">i</i></label>
+    <input id="nf-proj" list="nf-projects" value="${esc(project)}"><datalist id="nf-projects">${S.areas.map(a => `<option value="${esc(a.area)}">`).join('')}</datalist>
+    <label for="nf-name">File Name</label><input id="nf-name" placeholder="short-name">
+    <label for="nf-title">Title</label><input id="nf-title" placeholder="What this memory is">
+    <label for="nf-ext">Format</label><select id="nf-ext"><option value=".md">Markdown (.md)</option><option value=".yaml">YAML (.yaml)</option></select>
+    <div class="path" id="nf-path"></div>
+    <textarea id="ed" spellcheck="false" aria-label="File text"></textarea>
+    <div class="row"><button data-act="create">Create</button><button data-act="cancel-new">Cancel</button></div>
+    <p id="edmsg" class="note">Create writes the file and makes one local commit. Nothing is pushed.</p></div>`);
+  newPreview(); $('#nf-name').focus();
+}
+function newPath() {
+  const top = $('#nf-top').value, proj = slugify($('#nf-proj').value) || 'general';
+  const name = slugify($('#nf-name').value) || 'untitled', ext = $('#nf-ext').value;
+  const date = new Date().toISOString().slice(0, 10);
+  if (['policies', 'prompts', 'schemas', 'global'].includes(top)) return `${top}/${name}${ext}`;
+  if (top === 'projects') return `projects/${proj}/${name}${ext}`;
+  return `${top}/${proj}/${date}-${name}${ext}`;
+}
+function newPreview() {
+  const rel = newPath(), proj = slugify($('#nf-proj').value) || 'general', title = $('#nf-title').value.trim() || 'Untitled';
+  const id = rel.split('/').pop().replace(/\.(md|ya?ml)$/, ''), now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  $('#nf-path').textContent = rel;
+  if (S.tplTouched) return;
+  $('#ed').value = rel.endsWith('.md')
+    ? `---\nid: ${id}\nproject: ${proj}\nstatus: active\ncreated_at: ${now}\nrelated: []\n---\n\n# ${title}\n\n`
+    : `id: ${id}\nproject: ${proj}\nstatus: active\ncreated_at: ${now}\nsummary: >\n  ${title}\nrelated: []\n`;
+}
+async function doCreate() {
+  if (!slugify($('#nf-name').value)) return msg('Give a file name first.', true);
+  msg('Creating…');
+  const res = await api('/api/create', { rel: newPath(), text: $('#ed').value });
+  if (res.ok) return done(res, 'Created');
+  msg('Not created: ' + res.text, true);
+}
+
 // ---------- hash (so Back closes a card and restores the view) ----------
 function readHash() { return Object.fromEntries(new URLSearchParams(location.hash.slice(1))); }
 function writeHash(push = false) {
@@ -344,6 +469,8 @@ function writeHash(push = false) {
   push ? history.pushState(null, '', h) : history.replaceState(null, '', h);
 }
 window.addEventListener('popstate', () => {
+  if (S.dirty && !confirm('Discard unsaved changes?')) { writeHash(true); return; }
+  S.dirty = false;
   const h = readHash();
   if (h.view && h.view !== S.view) setView(h.view);
   if (h.node && S.byId.has(h.node)) openCard(S.byId.get(h.node), false); else closeCard(false);
@@ -374,7 +501,28 @@ $('#card-body').addEventListener('click', e => {
   if (act === 'fly') flyTo(n);
   if (act === 'copy') navigator.clipboard.writeText(n.path).then(() => { e.target.textContent = 'Copied'; });
   if (act === 'open') openFile(n);
+  if (act === 'edit') openEditor(n);
+  if (act === 'archive') askArchive(n);
+  if (act === 'new') openNew(n.kind === 'area' ? n.area : '');
+  if (act === 'save') saveEdit(n);
+  if (act === 'do-archive') doArchive(n);
+  if (act === 'cancel') { S.dirty = false; openCard(n, false); }
 });
+$('#card-body').addEventListener('click', e => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'create') doCreate();
+  if (act === 'cancel-new') { S.dirty = false; closeCard(); }
+});
+$('#card-body').addEventListener('input', e => {
+  if (e.target.id === 'ed') { S.dirty = true; if ($('#nf-top')) S.tplTouched = true; }
+  if (e.target.closest('.nf') && e.target.id !== 'ed') newPreview();
+});
+$('#card-body').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's' && e.target.id === 'ed') {
+    e.preventDefault(); if ($('#nf-top')) doCreate(); else if (S.selected) saveEdit(S.selected);
+  }
+});
+$('#new').addEventListener('click', () => openNew(S.areaOnly || ''));
 document.querySelectorAll('.stat').forEach(b => b.addEventListener('click', e => {
   if (e.target.classList.contains('tip')) return;
   const k = b.dataset.stat, row = n => `<li data-go="${esc(n.id)}"><span class="dot" data-c="${COLOR[n.kind] || COLOR.other}"></span>${esc(n.name)}<small>${esc(n.area)}</small></li>`;
@@ -382,6 +530,7 @@ document.querySelectorAll('.stat').forEach(b => b.addEventListener('click', e =>
   if (k === 'links') { setView('links'); setTimeout(fit, CONFIG.morphMs); }
   if (k === 'memories') openList('All Memories', [...S.mems].sort((a, b) => a.name.localeCompare(b.name)).map(row), 'Every memory file, A to Z. Click one to open it.');
   if (k === 'unresolved') openList('Unresolved Links', S.graph.unresolved.map(u => { const n = S.byId.get(u.from); return `<li data-go="${esc(u.from)}">[[${esc(u.target)}]]<small>in ${esc(n ? n.name : u.from)}</small></li>`; }), 'Links to a memory that does not exist yet. Click to open the file that holds the link.');
+  if (k === 'git') { const G = S.session?.git || {}; openList('Not Pushed', [`<li>${G.ahead ?? 'Unknown'} local commits on ${esc(G.branch || '?')} that GitHub does not have</li>`, `<li><code>git -C ${esc(S.session?.repo || '~/JMacAIUnifiedMemory')} push</code></li>`], 'The Brain View commits each change locally and never pushes. Review, then run the push command in a terminal.'); }
   if (k === 'built') { const R = S.graph.repo || {}; openList('Source', [R.url && `<li><a href="${esc(R.url)}" target="_blank" rel="noopener noreferrer">${esc(R.url)}</a></li>`, R.branch && `<li>Branch ${esc(R.branch)} · Commit ${esc(R.commit)}</li>`, ...S.graph.sources.map(s => `<li>${esc(s)}</li>`)].filter(Boolean), `graph.json built ${S.graph.built} from this repo by build_graph.py. Pull the repo, then rebuild: python3 brain/build_graph.py`); }
 }));
 
