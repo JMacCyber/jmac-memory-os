@@ -65,8 +65,12 @@ canvas.over { cursor: pointer; }
 .x { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; padding: 0; font-size: 18px; }
 
 @media (max-width: 800px) {
-  body { grid-template-columns: 1fr; grid-template-rows: auto auto auto 1fr; }
-  .legend { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
+  /* Narrow pane: the graph comes first and gets most of the height; the page scrolls to the rest. */
+  html, body { overflow: auto; height: auto; }
+  body { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(420px, 78vh) auto; }
+  main { grid-row: 3; }
+  .legend { grid-row: 4; border-right: 0; border-top: 1px solid var(--line); }
+  .stats { gap: 6px; padding: 6px 14px; }
 }
 .card a { color: var(--accent); }
 .nf label { display: block; margin: 10px 0 4px; color: var(--dim); font-size: 12px; }
