@@ -2,3 +2,5 @@
 *.pyc
 __pycache__/
 .readme-preview.html
+brain/data/
+__pycache__/

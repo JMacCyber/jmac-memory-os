@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brain View · JMac Memory OS</title>
+<link rel="stylesheet" href="/brain.css">
+</head>
+<body>
+<header class="bar">
+  <h1>Brain View <span class="tag">Test</span></h1>
+  <nav class="views" aria-label="View">
+    <button data-view="rings" title="Root in the middle, areas on the first ring, each memory type on its own ring">Rings</button>
+    <button data-view="areas" title="One cluster per area, root in the middle">Areas</button>
+    <button data-view="links" title="Force layout: memories that link to each other pull together">Links</button>
+    <button data-view="timeline" title="Left to right by last change date, one lane per memory type">Timeline</button>
+  </nav>
+  <div class="search">
+    <input id="q" type="search" placeholder="Search Name, Description, Path" autocomplete="off" aria-label="Search">
+    <ul id="hits" hidden></ul>
+  </div>
+  <div class="toggles">
+    <button id="names" aria-pressed="false" title="Show every label">Names</button>
+    <button id="motion" aria-pressed="false" title="Slow idle rotation in Rings and Areas">Motion</button>
+    <button id="fit" title="Fit every visible node on screen">Fit</button>
+    <button id="full" title="Full screen">Full Screen</button>
+  </div>
+</header>
+
+<section class="stats" aria-label="Totals">
+  <button class="stat" data-stat="areas"><b id="s-areas">–</b> Areas<i class="tip" data-tip="Count of memory folders that hold at least one memory file. One folder = one area. Click to open the Areas view.">i</i></button>
+  <button class="stat" data-stat="memories"><b id="s-mem">–</b> Memories<i class="tip" data-tip="Count of .md files in those folders, not counting MEMORY.md, INDEX.md or archive/. Click to list them all.">i</i></button>
+  <button class="stat" data-stat="links"><b id="s-links">–</b> Links<i class="tip" data-tip="Count of [[name]] links in memory bodies that match another memory, same area first, then a unique match anywhere. Click to open the Links view.">i</i></button>
+  <button class="stat" data-stat="unresolved"><b id="s-unres">–</b> Unresolved<i class="tip" data-tip="[[name]] links with no matching memory. The format allows them: they mark something worth writing. Click to list them.">i</i></button>
+  <button class="stat" data-stat="built"><span id="s-built">–</span><i class="tip" data-tip="When build_graph.py last wrote data/graph.json. Amber after 24 hours. Click to see which folders it read.">i</i></button>
+</section>
+
+<aside class="legend" aria-label="Legend">
+  <h2>Types <i class="tip" data-tip="Colour = the memory's type field. Click a type to show only that type. Click again to show all.">i</i></h2>
+  <ul id="types"></ul>
+  <h2>Area <i class="tip" data-tip="Show one area only. Size of a dot = how many links it has.">i</i></h2>
+  <select id="area" aria-label="Area"><option value="">All Areas</option></select>
+  <p class="hint">Drag to pan · Wheel to zoom · Click a dot to open it</p>
+</aside>
+
+<main id="stage"><canvas id="c"></canvas><p id="status" class="status">Loading graph.json…</p></main>
+
+<div id="shade" class="shade" hidden></div>
+<aside id="card" class="card" hidden role="dialog" aria-modal="true" aria-labelledby="card-title">
+  <button id="card-x" class="x" aria-label="Close">×</button>
+  <div id="card-body"></div>
+</aside>
+
+<div id="tipbox" class="tipbox" hidden></div>
+<script src="/brain.js"></script>
+</body>
+</html>
