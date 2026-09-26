@@ -7,8 +7,10 @@
     read.py history <name>       what this memory used to say, newest first
     read.py check                report format problems, exit 1 if any
 
-Reads `memory/` under the current directory, or under $MEMORY_DIR.
-No dependencies. Python 3.8+.
+Reads `memory/` under the current directory, or under $MEMORY_DIR, or under
+the folder given with --dir <path> (any position). --dir is the portable way
+to point it somewhere on Windows, where `MEMORY_DIR=x cmd` is not valid syntax.
+No dependencies. Python 3.8+. Runs on Windows, macOS and Linux.
 
 This is the floor, not the ceiling. It does substring matching over small
 directories. It has no ranking, no embeddings and no query planner, and it
@@ -22,9 +24,24 @@ import sys
 
 FRONT = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
 
+# Set by --dir. Takes priority over $MEMORY_DIR.
+BASE = None
+
+
+def _utf8_console():
+    """Windows consoles and pipes default to a legacy code page (cp1252/cp437).
+    A memory containing an arrow or an emoji would crash print(). Write UTF-8
+    and replace anything the terminal still cannot show."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 
 def root():
-    base = os.environ.get("MEMORY_DIR", ".")
+    base = BASE or os.environ.get("MEMORY_DIR", ".")
+    base = os.path.expandvars(os.path.expanduser(base))
     path = os.path.join(base, "memory")
     if not os.path.isdir(path):
         sys.exit(f"read.py: no memory/ directory under {os.path.abspath(base)}")
@@ -33,7 +50,7 @@ def root():
 
 def parse(path):
     """Return (frontmatter dict, body). Frontmatter is flat key: value."""
-    with open(path, encoding="utf-8") as fh:
+    with open(path, encoding="utf-8-sig") as fh:
         text = fh.read()
     match = FRONT.match(text)
     if not match:
@@ -71,7 +88,7 @@ def cmd_get(name):
     if not os.path.exists(path):
         sys.exit(f"read.py: no live memory named {name}"
                  f" (try: read.py history {name})")
-    with open(path, encoding="utf-8") as fh:
+    with open(path, encoding="utf-8-sig") as fh:
         print(fh.read().rstrip())
 
 
@@ -118,7 +135,7 @@ def cmd_check():
     index_path = os.path.join(root(), "INDEX.md")
     index = ""
     if os.path.exists(index_path):
-        with open(index_path, encoding="utf-8") as fh:
+        with open(index_path, encoding="utf-8-sig") as fh:
             index = fh.read()
     if not index:
         problems.append("memory/INDEX.md is missing or empty")
@@ -129,6 +146,9 @@ def cmd_check():
                 problems.append(f"{path}: missing {key}")
         if meta.get("name") and meta["name"] != name:
             problems.append(f"{path}: name '{meta['name']}' does not match filename")
+        if name != name.lower():
+            problems.append(f"{path}: filename must be lowercase kebab-case"
+                            " (Windows and macOS ignore case, git does not)")
         if meta.get("type") and meta["type"] not in types:
             problems.append(f"{path}: type '{meta['type']}' is not one of {sorted(types)}")
         if f"({name}.md)" not in index:
@@ -144,6 +164,15 @@ def cmd_check():
 
 
 def main(argv):
+    global BASE
+    _utf8_console()
+    argv = list(argv)
+    if "--dir" in argv:
+        i = argv.index("--dir")
+        if i + 1 >= len(argv):
+            sys.exit("read.py: --dir needs a path")
+        BASE = argv[i + 1]
+        del argv[i:i + 2]
     if not argv:
         print(__doc__)
         return 0

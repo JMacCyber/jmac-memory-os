@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""memos-init — create a git memory repo that any AI client can read.
+r"""memos-init — create a git memory repo that any AI client can read.
 
 Usage:
     memos-init [directory] [--git] [--force]
 
 Creates the layout defined in SPEC.md, an AGENTS.md instruction file that
 tells a coding agent how to use it, and one example memory so the repo is
-not empty on first read.
+not empty on first read. With --git it also initialises git and installs a
+pre-commit hook that runs the format check.
 
-No dependencies. Python 3.8+.
+On Windows run it as:  py bin\memos-init %USERPROFILE%\my-memory --git
+(or use bin\memos-init.cmd). `~` is expanded on every platform.
+
+No dependencies. Python 3.8+. Windows, macOS and Linux.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from datetime import date
@@ -99,8 +104,35 @@ Never edit a memory in place. Supersede it:
 """
 
 GITIGNORE = """.DS_Store
+Thumbs.db
+desktop.ini
 *.swp
 .env
+__pycache__/
+"""
+
+# Memory files are shared between Windows, macOS and Linux machines.
+# Store them with LF so a Windows checkout never produces a CRLF diff on
+# every line, and never lets git "fix" line endings behind your back.
+GITATTRIBUTES = """* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+"""
+
+# Runs under the sh that ships with Git for Windows, and under macOS/Linux.
+# Probes each interpreter name: on Windows `python3` is often the Microsoft
+# Store stub, which exists on PATH but does not run Python.
+HOOK = """#!/bin/sh
+# JMac Memory OS format check. Installed by memos-init.
+here="$(git rev-parse --show-toplevel)"
+for py in python3 python py; do
+  if command -v "$py" >/dev/null 2>&1 && "$py" -c "import sys; sys.exit(sys.version_info < (3, 8))" >/dev/null 2>&1; then
+    exec "$py" "$here/.memos/read.py" --dir "$here" check
+  fi
+done
+echo "memory pre-commit: no Python 3.8+ found, format check skipped" >&2
+exit 0
 """
 
 README = """# My Memory
@@ -121,13 +153,19 @@ def write(path, text, force):
     if os.path.exists(path) and not force:
         print(f"  skip   {path} (exists)")
         return False
-    with open(path, "w", encoding="utf-8") as fh:
+    # newline="\n": LF on every OS, so files are byte-identical everywhere.
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
     print(f"  write  {path}")
     return True
 
 
 def main(argv):
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     args = [a for a in argv if not a.startswith("--")]
     flags = {a for a in argv if a.startswith("--")}
     unknown = flags - {"--git", "--force", "--help", "-h"}
@@ -137,7 +175,9 @@ def main(argv):
         print(__doc__)
         return 0
 
-    root = os.path.abspath(args[0] if args else ".")
+    target = args[0] if args else "."
+    # PowerShell and cmd.exe pass `~` through literally; expand it ourselves.
+    root = os.path.abspath(os.path.expandvars(os.path.expanduser(target)))
     force = "--force" in flags
     today = date.today().isoformat()
 
@@ -152,6 +192,23 @@ def main(argv):
     write(os.path.join(root, "AGENTS.md"), AGENTS, force)
     write(os.path.join(root, "CLAUDE.md"), "See AGENTS.md.\n", force)
     write(os.path.join(root, ".gitignore"), GITIGNORE, force)
+    write(os.path.join(root, ".gitattributes"), GITATTRIBUTES, force)
+    # Ship the reader inside the memory repo so the check and hook work on
+    # any machine that clones it, with nothing else installed.
+    reader_src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              os.pardir, "reader", "read.py")
+    os.makedirs(os.path.join(root, ".memos"), exist_ok=True)
+    reader_dst = os.path.join(root, ".memos", "read.py")
+    if os.path.exists(reader_src) and (force or not os.path.exists(reader_dst)):
+        shutil.copyfile(reader_src, reader_dst)
+        print(f"  write  {reader_dst}")
+    # AGENTS.md tells agents the full format is in SPEC.md, so ship it too.
+    spec_src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            os.pardir, "SPEC.md")
+    spec_dst = os.path.join(root, "SPEC.md")
+    if os.path.exists(spec_src) and (force or not os.path.exists(spec_dst)):
+        shutil.copyfile(spec_src, spec_dst)
+        print(f"  write  {spec_dst}")
     write(os.path.join(root, "README.md"), README, force)
 
     if "--git" in flags:
@@ -159,7 +216,17 @@ def main(argv):
             print("  skip   git init (already a repo)")
         else:
             try:
-                subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+                subprocess.run(["git", "init", "-q", "-b", "main"],
+                               cwd=root, check=True)
+                # Honour .gitattributes on Windows even if the global
+                # core.autocrlf=true default from the Git installer is set.
+                subprocess.run(["git", "config", "core.autocrlf", "false"],
+                               cwd=root, check=True)
+                hook = os.path.join(root, ".git", "hooks", "pre-commit")
+                with open(hook, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(HOOK)
+                os.chmod(hook, 0o755)
+                print("  hook   pre-commit runs the format check")
                 subprocess.run(["git", "add", "."], cwd=root, check=True)
                 subprocess.run(
                     ["git", "commit", "-q", "-m", "Start memory"],
@@ -168,7 +235,9 @@ def main(argv):
             except FileNotFoundError:
                 die("git is not installed")
             except subprocess.CalledProcessError as exc:
-                die(f"git failed: {exc}")
+                die(f"git failed: {exc} If this is a new machine, set your"
+                    " identity first:\n  git config --global user.name \"Your Name\""
+                    "\n  git config --global user.email you@example.com")
 
     print("""
 Next:
