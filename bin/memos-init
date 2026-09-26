@@ -202,6 +202,13 @@ def main(argv):
     if os.path.exists(reader_src) and (force or not os.path.exists(reader_dst)):
         shutil.copyfile(reader_src, reader_dst)
         print(f"  write  {reader_dst}")
+    # AGENTS.md tells agents the full format is in SPEC.md, so ship it too.
+    spec_src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            os.pardir, "SPEC.md")
+    spec_dst = os.path.join(root, "SPEC.md")
+    if os.path.exists(spec_src) and (force or not os.path.exists(spec_dst)):
+        shutil.copyfile(spec_src, spec_dst)
+        print(f"  write  {spec_dst}")
     write(os.path.join(root, "README.md"), README, force)
 
     if "--git" in flags:
